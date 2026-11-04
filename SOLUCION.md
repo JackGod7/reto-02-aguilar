@@ -42,7 +42,7 @@ Dominio e infraestructura (src/domain/, src/infra/)
 ## 4. Elección del modelo
 
 - **Proveedor y modelo**: Anthropic, `claude-haiku-5-5` por defecto, configurable con `LLM_MODEL`. Se eligió por soporte fiable de llamadas a herramientas y por costo bajo para un flujo de muchas llamadas cortas.
-- **Costo por caso procesado**: **sin medir** (`<COSTO>`): la integración final no tuvo `ANTHROPIC_API_KEY`, así que no hay tokens reales ni se afirma precio. Cálculo pendiente: tokens reales (`usage.tokens` de `/api/chat`) × precio vigente de `claude-haiku-5-5`, a verificar con fecha. El flujo determinista (demo) no consume tokens; el LLM solo orquesta.
+- **Costo por caso procesado**: medido en una corrida real con `claude-haiku-5-5` (2026-11-03): 6 mensajes + confirmación de 006 = 53.358 tokens totales (39.041 + 14.317; `usage.tokens`, sin desglose entrada/salida). **Precio por token no verificado**: `<COSTO>` en USD queda pendiente de multiplicar por la tarifa vigente de Anthropic con su fecha. Una sola corrida, no es un promedio.
 - **Prompt caching**: se evaluará sobre el system prompt si el costo medido lo justifica.
 
 ## 5. Estrategia de extracción
@@ -134,5 +134,5 @@ Estado pendiente de verificar en M7 (integración final). Ningún estado se marc
 | Nombres de cliente variables que generan duplicados | Deduplicación por NIT + objeto, con revisión humana por encima del umbral. |
 | Escaneados sin texto | OCR antes de la extracción. |
 | Datos personales en correos y contratos | Minimizar lo que se guarda en logs; definir retención. |
-| Costo del modelo | Medición real por caso (`<COSTO>`), tope de tokens y revisión de precios vigentes. |
+| Costo del modelo | Medición real por caso (≈53 mil tokens/lote; `<COSTO>` USD sin verificar), tope de tokens y revisión de precios vigentes. |
 | Rotación de claves | Clave en variable de entorno del proveedor de hosting; rotación periódica. |

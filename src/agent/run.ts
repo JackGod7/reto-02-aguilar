@@ -96,6 +96,22 @@ export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
         nuevaRevision = null;
       }
     }
+    // El gate no depende de que el modelo llame registrar: si validar detecta revisión, el servidor
+    // sondea registrar (sin confirmado: nunca escribe) para obtener los campos y fijar la pendiente.
+    if (name === "contratos_validar" && r.ok && typeof a.mensaje_id === "string") {
+      const d = (r.data ?? {}) as { requiere_revision?: unknown; clasificacion?: unknown };
+      if (Array.isArray(d.requiere_revision) && d.requiere_revision.length > 0 && (d.clasificacion === "nuevo" || d.clasificacion === "actualizacion")) {
+        const sonda = parse(await run("contratos_registrar", { mensaje_id: a.mensaje_id }, { directory: o.directory, sessionId: session.id }));
+        if (!sonda.ok && Array.isArray(sonda.revision) && sonda.revision.length > 0) {
+          const campos = sonda.revision as CampoRevision[];
+          nuevaRevision = {
+            mensaje_id: a.mensaje_id,
+            campos,
+            pregunta: `El mensaje ${a.mensaje_id} requiere revisión (${campos.map((c) => c.campo).join(", ")}). ¿Confirmas el registro con estos valores?`,
+          };
+        }
+      }
+    }
     toolCalls.push({ id, name, args, ok: r.ok === true, resumen: resumir(r) });
     return salida;
   };
