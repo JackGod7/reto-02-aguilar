@@ -32,6 +32,7 @@ Estado al 2026-11-03, commit `0a5eaa6` en `main`.
 9. Observaciones: el tope del ejecutor cuenta llamadas y no pasos; "confirmo msg-0060" casa con msg-006 (usar límite de palabra).
 
 10. Escalamiento de modelo (cascada): Haiku por defecto y Sonnet (`claude-sonnet-5-5`) cuando hay una revisión pendiente, un error de herramienta, se llega al tope de pasos o el turno es explicativo. Implementar en el adapter (`src/llm/`) con `LLM_MODEL` y `LLM_MODEL_ESCALADO`, loguear qué modelo respondió y documentarlo como ADR-004. Para la defensa basta poner `LLM_MODEL=claude-sonnet-5-5` en Render (sin código).
+11. Ingeniería de contexto: (a) compactar historial con ventana deslizante o resumen de turnos viejos antes del tope de sesión (`src/agent/run.ts`); (b) prompt caching del system prompt + conocimiento (`cache_control` en el adapter) y medir ahorro; (c) si el conocimiento crece, pasar de inyección completa (ADR-003) a carga bajo demanda por herramienta o RAG; (d) set de evals por escenario (buzón completo, msg-006, rechazo, injection en correo) que mida calidad de respuesta del modelo y sirva para decidir Haiku vs Sonnet (pendiente 10).
 
 Detalle completo de cada hallazgo: volver a correr una verificación del PRD por secciones o leer `entrega/AUDITORIA.md`.
 
