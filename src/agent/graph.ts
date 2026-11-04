@@ -40,6 +40,8 @@ const Estado = Annotation.Root({
   incierto: Annotation<number>(),
   /** El proveedor respondió sin informar uso: no hay cota y el servidor retiene la reserva. */
   usoSinInformar: Annotation<boolean>(),
+  /** Tokens de entrada escritos/leídos de la caché de prompt en el turno (incluidos en tokens); null si el proveedor no lo informa. */
+  cache: Annotation<{ creacion: number; lectura: number } | null>(),
 });
 type Flujo = typeof Estado.State;
 type Cambio = Partial<Flujo>;
@@ -58,7 +60,7 @@ export interface RunResult {
   toolCalls: ToolCallInfo[];
   needsConfirmation: NeedsConfirmation | null;
   /** uncertain: cota de tokens de llamadas que fallaron antes de devolver respuesta (solo si known es false). */
-  usage: { steps: number; tokens: number; known?: boolean; uncertain?: number };
+  usage: { steps: number; tokens: number; known?: boolean; uncertain?: number; cacheCreationInputTokens?: number; cacheReadInputTokens?: number };
 }
 
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -78,7 +80,8 @@ export function resumir(name: string, r: RespuestaTool, args?: unknown): string 
     }
     case "validar": {
       const rev = arr(d.requiere_revision);
-      return `${str(d.clasificacion)}; en revisión: ${rev.length > 0 ? rev.join(", ") : "ninguno"}`;
+      const adv = arr(d.advertencias).filter((x): x is string => typeof x === "string");
+      return `${str(d.clasificacion)}; en revisión: ${rev.length > 0 ? rev.join(", ") : "ninguno"}${adv.length ? `; advertencias: ${adv.join(" | ")}` : ""}`;
     }
     case "registrar":
       return `${str(d.accion)} ${d.id_contrato ?? "-"}${d.ruta_archivo ? ` → ${str(d.ruta_archivo)}` : ""}`.slice(0, 200);
@@ -162,14 +165,14 @@ function frasesAceptadas(r: Pick<Revision, "campos" | "reviewId" | "mensaje_id">
 function decisionHumana(r: Revision, message: string): DecisionHumana | null {
   if (hash(r.operacion, r.campos, r.sourceFingerprint) !== r.operationHash) return null;
   // Normaliza solo forma (mayúsculas, espacios, punto/exclamación final); cualquier palabra extra sigue sin autorizar.
-  const texto = message.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!]+$/u, "").trim();
+  const texto = message.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!]+$/u, "").trim().replace(/^(?:sí,?|si,|ok,?|vale,?|listo,?) /u, "");
   const aprobaciones = [
     `confirmo revisión ${r.reviewId}`,
     `confirmo ${r.mensaje_id} (revisión ${r.reviewId})`,
   ];
   const prd = frasePRD(r);
   const escapar = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const variantePRD = prd ? new RegExp(`^confirmo:? (?:el )?valor ${escapar(String(prd.valor))},? y (?:la )?fecha (?:de )?fin ${escapar(prd.fin)}$`, "u") : null;
+  const variantePRD = prd ? new RegExp(`^confirmo,?:? (?:el )?valor ${escapar(String(prd.valor))},? y (?:la )?fecha (?:de )?fin ${escapar(prd.fin)}$`, "u") : null;
   const rechazos = [
     `rechazo revisión ${r.reviewId}`,
     `rechazo el registro de ${r.mensaje_id}`,
@@ -304,7 +307,8 @@ async function nodoModelo(s: Flujo, config: LangGraphRunnableConfig): Promise<Ca
   } finally { if (timer) clearTimeout(timer); }
   const valido = Number.isFinite(paso.tokens) && paso.tokens >= 0;
   const tokens = s.tokens + (valido ? paso.tokens : 0);
-  const uso: Cambio = { steps: s.steps + 1, tokens, incierto: s.incierto, usoSinInformar: s.usoSinInformar || !paso.usoConocido, usageKnown: s.usageKnown && paso.usoConocido && valido };
+  const uso: Cambio = { steps: s.steps + 1, tokens, incierto: s.incierto, usoSinInformar: s.usoSinInformar || !paso.usoConocido, usageKnown: s.usageKnown && paso.usoConocido && valido,
+    cache: paso.cache ? { creacion: (s.cache?.creacion ?? 0) + paso.cache.creacion, lectura: (s.cache?.lectura ?? 0) + paso.cache.lectura } : s.cache };
   guardar(t, uso);
   if (!paso.usoConocido) throw new Error("El proveedor no informó uso de tokens; turno detenido");
   if (tokens > o.maxTokens - o.session.tokens) return guardar(t, { ...uso, stop: "El proveedor informó un uso superior al presupuesto; no ejecuté sus herramientas." });
@@ -360,7 +364,7 @@ function nodoDecision(s: Flujo, config: LangGraphRunnableConfig): Cambio {
   const d = s.respuestaHumana;
   if (!r || !d || d.reviewId !== r.reviewId || d.operationHash !== r.operationHash || decisionHumana(r, d.message)?.approved !== d.approved) throw new Error("La decisión no corresponde a la revisión pendiente");
   if (d.approved) return guardar(t, { respuestaHumana: d });
-  return guardar(t, { review: null, respuestaHumana: null, reply: `Registro de ${r.mensaje_id} cancelado.`, history: [...s.history, { role: "assistant", content: `La persona rechazó registrar ${r.mensaje_id}.` }] });
+  return guardar(t, { review: null, respuestaHumana: null, reply: `Registro de ${r.mensaje_id} cancelado.` });
 }
 
 async function nodoRegistroAprobado(s: Flujo, config: LangGraphRunnableConfig): Promise<Cambio> {
@@ -382,7 +386,8 @@ const rutaInicio = (s: Flujo) => s.queue.length ? "herramienta" : "modelo";
 const rutaDesdeModelo = (s: Flujo) => s.stop || !s.queue.length ? END : "herramienta";
 const rutaDesdeHerramienta = (s: Flujo) => s.stop ? END : "detectar_revision";
 const rutaDesdeRevision = (s: Flujo) => s.stop ? END : s.review ? "pausa" : s.queue.length ? "herramienta" : "modelo";
-const rutaDesdeDecision = (s: Flujo) => s.review ? "registro_aprobado" : s.queue.length ? "herramienta" : "modelo";
+// Tras un rechazo sin cola el turno termina: el historial acabaría en assistant y la API lo rechaza (prefill).
+const rutaDesdeDecision = (s: Flujo) => s.review ? "registro_aprobado" : s.queue.length ? "herramienta" : END;
 
 /** Un modelo por nodo, una herramienta por nodo, revisión y pausa en nodos independientes. Se compila una vez. */
 const grafo = new StateGraph(Estado)
@@ -397,7 +402,7 @@ const grafo = new StateGraph(Estado)
   .addConditionalEdges("herramienta", rutaDesdeHerramienta, [END, "detectar_revision"])
   .addConditionalEdges("detectar_revision", rutaDesdeRevision, [END, "pausa", "herramienta", "modelo"])
   .addEdge("pausa", "decision")
-  .addConditionalEdges("decision", rutaDesdeDecision, ["registro_aprobado", "herramienta", "modelo"])
+  .addConditionalEdges("decision", rutaDesdeDecision, ["registro_aprobado", "herramienta", END])
   .addEdge("registro_aprobado", "detectar_revision")
   .compile({ checkpointer });
 
@@ -414,7 +419,7 @@ async function turno(o: RunOpts): Promise<RunResult> {
   const previo = await grafo.getState(config);
   const anterior = previo.values as Partial<Flujo>;
   const history = anterior.history ?? o.session.messages.map((m): MensajePaso => ({ role: m.role, content: m.text }));
-  const reinicio: Flujo = { history, queue: anterior.queue ?? [], review: anterior.review ?? null, respuestaHumana: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "", limite: false, incierto: 0, usoSinInformar: false };
+  const reinicio: Flujo = { history, queue: anterior.queue ?? [], review: anterior.review ?? null, respuestaHumana: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "", limite: false, incierto: 0, usoSinInformar: false, cache: null };
   const t: Turno = { o, maxSteps, maxTools, maxOutput: positivo(process.env.LLM_MAX_OUTPUT_TOKENS, 4096, 32_768), deadline: Date.now() + positivo(process.env.LLM_TIMEOUT_MS, 60_000, 600_000), actual: reinicio };
   turnos.set(o.session.id, t);
   o.session.messages.push({ role: "user", text: o.message, ts: new Date().toISOString() });
@@ -444,5 +449,5 @@ function finalizar(o: RunOpts, f: Flujo): RunResult {
   const baseReply = f.reply && !f.stop ? [f.reply, resumen].filter(Boolean).join("\n\n") : resumen;
   const reply = pending ? [baseReply, pending.pregunta].filter(Boolean).join("\n") : baseReply;
   o.session.messages.push({ role: "assistant", text: reply, toolCalls: structuredClone(f.toolCalls), ts: new Date().toISOString() });
-  return { reply, toolCalls: f.toolCalls, needsConfirmation: pending, usage: { steps: f.steps, tokens: f.tokens, known: f.usageKnown, ...(!f.usageKnown && !f.usoSinInformar ? { uncertain: f.incierto } : {}) } };
+  return { reply, toolCalls: f.toolCalls, needsConfirmation: pending, usage: { steps: f.steps, tokens: f.tokens, known: f.usageKnown, ...(f.cache ? { cacheCreationInputTokens: f.cache.creacion, cacheReadInputTokens: f.cache.lectura } : {}), ...(!f.usageKnown && !f.usoSinInformar ? { uncertain: f.incierto } : {}) } };
 }

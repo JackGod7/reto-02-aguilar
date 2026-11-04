@@ -220,7 +220,7 @@ test("LangChain: ChatAnthropic real serializa schemas e historial y deserializa 
   }).parse(solicitudes[0]);
   assert.equal(body.model, "modelo-ficticio");
   assert.equal(body.max_tokens, 128);
-  assert.equal(body.system, "instrucciones");
+  assert.deepEqual(body.system, [{ type: "text", text: "instrucciones", cache_control: { type: "ephemeral" } }]);
   assert.deepEqual(body.messages, [
     { role: "user", content: "procesa" },
     { role: "assistant", content: [{ type: "text", text: "Reviso el buzón." }, { type: "tool_use", id: "tool_anterior", name: "contratos_leer_buzon", input: {} }] },
@@ -230,5 +230,42 @@ test("LangChain: ChatAnthropic real serializa schemas e historial y deserializa 
   assert.equal(body.tools[0]?.description, "Extraer contrato");
   assert.deepEqual(body.tools[0]?.input_schema.required, ["mensaje_id"]);
   assert.equal(body.tools[0]?.input_schema.properties.mensaje_id.description, "Identificador de correo");
-  assert.deepEqual(paso, { texto: "Consultaré el contrato.", llamadas: [{ id: "tool_prueba", name: "contratos_extraer", args: { mensaje_id: "msg-006" } }], tokens: 30, usoConocido: true });
+  assert.deepEqual(paso, { texto: "Consultaré el contrato.", llamadas: [{ id: "tool_prueba", name: "contratos_extraer", args: { mensaje_id: "msg-006" } }], tokens: 30, usoConocido: true, cache: { creacion: 0, lectura: 0 } });
+});
+
+test("LangChain: el prefijo estable (tools + system) lleva cache_control y el uso cacheado se informa", async () => {
+  const solicitudes: unknown[] = [];
+  const usos = [
+    { input_tokens: 40, output_tokens: 10, cache_creation_input_tokens: 2500, cache_read_input_tokens: 0 },
+    { input_tokens: 55, output_tokens: 12, cache_creation_input_tokens: 0, cache_read_input_tokens: 2500 },
+  ];
+  const fakeFetch: typeof fetch = async (input, init) => {
+    solicitudes.push(await new Request(input, init).json());
+    return Response.json({
+      id: `msg_${solicitudes.length}`, type: "message", role: "assistant", model: "modelo-ficticio",
+      content: [{ type: "text", text: "Listo." }], stop_reason: "end_turn", stop_sequence: null,
+      usage: usos[solicitudes.length - 1],
+    });
+  };
+  const adapter = crearAnthropicAdapter(env, (config) => new ChatAnthropic({
+    ...config, clientOptions: { ...config?.clientOptions, fetch: fakeFetch },
+  }));
+  const tools: Herramienta[] = [
+    { name: "contratos_leer_buzon", description: "Leer buzón", inputSchema: z.object({}).strict() },
+    { name: "contratos_extraer", description: "Extraer", inputSchema: z.object({ mensaje_id: z.string().describe("Correo") }).strict() },
+  ];
+  const primero = await adapter.generarPaso([{ role: "user", content: "hola" }], tools, { system: "prompt estable" });
+  const segundo = await adapter.generarPaso([{ role: "user", content: "hola" }, { role: "assistant", content: "Listo." }, { role: "user", content: "otra" }], tools, { system: "prompt estable" });
+  const cuerpo = z.object({ system: z.unknown(), tools: z.array(z.record(z.string(), z.unknown())), messages: z.array(z.object({ content: z.unknown() })) });
+  for (const solicitud of solicitudes) {
+    const body = cuerpo.parse(solicitud);
+    // Un único breakpoint, en el último bloque del system: cubre tools (renderizadas antes) y system.
+    assert.deepEqual(body.system, [{ type: "text", text: "prompt estable", cache_control: { type: "ephemeral" } }]);
+    assert.ok(body.tools.every((tool) => !("cache_control" in tool)));
+    assert.ok(!JSON.stringify(body.messages).includes("cache_control"));
+  }
+  assert.deepEqual(primero.cache, { creacion: 2500, lectura: 0 });
+  assert.equal(primero.tokens, 2550);
+  assert.deepEqual(segundo.cache, { creacion: 0, lectura: 2500 });
+  assert.equal(segundo.tokens, 2567);
 });

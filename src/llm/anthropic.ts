@@ -27,7 +27,10 @@ function positivo(valor: string | undefined, defecto: number): number {
 }
 
 function historial(mensajes: MensajePaso[], system?: string): BaseMessage[] {
-  const resultado: BaseMessage[] = system ? [new SystemMessage(system)] : [];
+  // Breakpoint de caché en el system: Anthropic renderiza tools -> system, así cachea ambos.
+  const resultado: BaseMessage[] = system
+    ? [new SystemMessage({ content: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] })]
+    : [];
   for (const mensaje of mensajes) {
     if (mensaje.role === "user") resultado.push(new HumanMessage(mensaje.content));
     else if (mensaje.role === "tool") {
@@ -66,6 +69,8 @@ export function crearAnthropicAdapter(
       ? AbortSignal.any([opciones.signal, AbortSignal.timeout(timeoutMs)])
       : AbortSignal.timeout(timeoutMs);
     const mensajesModelo = historial(mensajes, opciones.system);
+    // Los modelos 5.x no admiten prefill: un historial terminado en assistant es un 400 seguro.
+    if (mensajesModelo.at(-1) instanceof AIMessage) throw new Error("Historial inválido: no puede terminar en assistant (prefill no soportado)");
     try {
       signal.throwIfAborted();
       const modelo = crearModelo({ model, apiKey, maxTokens: Math.min(maxSalida, maxTokens), maxRetries: 0, clientOptions: { timeout: timeoutMs, maxRetries: 0 } });
@@ -99,7 +104,10 @@ export function crearAnthropicAdapter(
         .map((bloque) => bloque.text).join("");
       const total = respuesta.usage_metadata?.total_tokens;
       const usoConocido = typeof total === "number" && Number.isSafeInteger(total) && total >= 0;
-      return { texto, llamadas, tokens: usoConocido ? total : 0, usoConocido };
+      const detalle = respuesta.usage_metadata?.input_token_details;
+      const entero = (n: unknown): number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : 0;
+      const cache = { creacion: entero(detalle?.cache_creation), lectura: entero(detalle?.cache_read) };
+      return { texto, llamadas, tokens: usoConocido ? total : 0, usoConocido, ...(usoConocido && detalle ? { cache } : {}) };
     } catch {
       // Los errores del SDK pueden incluir cabeceras o contenido privado; no se propagan.
       throw new Error(signal.aborted ? "La solicitud al proveedor LLM fue cancelada o agotó su tiempo" : "No se pudo completar la solicitud al proveedor LLM");

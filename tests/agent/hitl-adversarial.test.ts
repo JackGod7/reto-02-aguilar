@@ -101,7 +101,7 @@ test("HITL adversarial: replay aprobado no vuelve a escribir aunque el modelo in
 });
 
 test("HITL adversarial: replay rechazado no aprueba una revisión nueva del mismo mensaje", async (t) => {
-  const e = entorno(t, [paso(registrar()), paso(), paso(registrar())]);
+  const e = entorno(t, [paso(registrar()), paso(registrar())]);
   const inicial = await e.run("procesa");
   const anterior = inicial.needsConfirmation!.reviewId!;
   await e.run(`rechazo revisión ${anterior}`);

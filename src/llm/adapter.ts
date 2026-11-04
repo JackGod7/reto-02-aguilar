@@ -26,6 +26,8 @@ export interface PasoLLM {
   llamadas: LlamadaLLM[];
   tokens: number;
   usoConocido: boolean;
+  /** Desglose de caché de prompt (ya incluido en tokens): escrituras y lecturas del prefijo. */
+  cache?: { creacion: number; lectura: number };
 }
 
 export interface OpcionesPasoLLM {
