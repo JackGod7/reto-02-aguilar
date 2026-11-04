@@ -1,0 +1,2 @@
+- [Borrar antes que escribir](borrar-antes-que-escribir.md) — eliminar código no usado antes de añadir; estructura por capas trazable
+- [Delegar trabajo pesado](delegar-trabajo-pesado.md) — esta sesión solo orquesta; verificaciones y ediciones en sesiones aparte
