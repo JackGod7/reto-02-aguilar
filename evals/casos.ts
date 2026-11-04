@@ -86,6 +86,7 @@ export const casos: Caso[] = [
       c.si(filas(ctx.dir, "CT-2026-011")[0]?.fecha_fin === "2027-11-01", `CT-2026-011 fecha_fin=${filas(ctx.dir, "CT-2026-011")[0]?.fecha_fin}`);
       c.si(filas(ctx.dir, "CT-2026-012").length === 1, "CT-2026-012 duplicado (msg-004)");
       c.si(historial(ctx.dir).filter((h) => h.id_contrato === "CM-2026-03").length === 1, "historial de CM-2026-03 ≠ 1 línea");
+      for (const id of ["CT-2026-015", "CT-2026-016", "CM-2026-03"]) { const f = filas(ctx.dir, id)[0]; c.si(f === undefined || f.fecha_registro === HOY, `${id} fecha_registro=${f?.fecha_registro} (SPEC: = hoy ${HOY})`); }
       const a = alertas(ctx.dir);
       c.si(a !== null, "no existe out/alertas.md");
       for (const id of ["CM-2026-03", "CT-2026-009", "CT-2026-004", "CT-2026-015"]) c.si(a?.includes(id) ?? false, `alertas.md sin ${id}`);
@@ -101,6 +102,9 @@ export const casos: Caso[] = [
       const c = chequeo(); const [t1, t2] = ctx.turnos;
       turnosOk(c, ctx);
       pausa006(c, t1, "turno 1");
+      c.si((t1?.reply ?? "").includes(HOY), `turno 1: la confirmación no usa hoy ${HOY}; reply=${corto(t1?.reply.slice(t1.reply.indexOf("Fecha de registro")))}`);
+      const f = filas(ctx.dir, "CM-2026-03")[0];
+      c.si(f === undefined || f.fecha_registro === HOY, `CM-2026-03 fecha_registro=${f?.fecha_registro}`);
       c.si(filas(ctx.dir, "CM-2026-03").length === 1, `CM-2026-03 en maestro: ${filas(ctx.dir, "CM-2026-03").length} filas tras confirmación natural; turno 2 needsConfirmation=${t2?.needsConfirmation?.mensaje_id ?? null}; reply=${corto(t2?.reply)}`);
       return c.fallos;
     },
