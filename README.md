@@ -32,6 +32,8 @@ Copia `.env.example` a `.env` y completa los valores. Nunca commitees `.env`.
 | `MAX_SESSION_TOKENS` | No | Tope de tokens por sesión. Por defecto `200000`. |
 | `ACCESS_KEY` | No | Si se define, el chat y la API la exigen en el encabezado `x-access-key`. |
 | `PORT` | No | Puerto del servidor. Por defecto `3000`. |
+| `MAX_DAILY_TOKENS` | No | Tope diario global de tokens (día UTC). Por defecto `2000000`; al superarlo responde 429. |
+| `TRUST_PROXY` | No | `1` usa `x-forwarded-for` para el rate limit. Se activa solo si existe `RENDER`. |
 | `HOY` | No | Fecha de referencia `YYYY-MM-DD` para alertas. Ejemplo: `2026-09-03`. |
 
 ## Demo sin modelo
@@ -47,6 +49,7 @@ Pruebas:
 ```bash
 npm test
 npm run typecheck
+npm run build:modulo   # regenera modulo/ (bonus) desde agent/prompt.md y src/knowledge/
 ```
 
 ## API
@@ -55,9 +58,12 @@ npm run typecheck
 |---|---|---|
 | `POST` | `/api/chat` | Envía `{ sessionId?, message }`. Devuelve la respuesta, las llamadas a herramientas y, si hace falta, `needsConfirmation`. |
 | `GET` | `/api/sessions/:id` | Historial de la sesión y confirmación pendiente. 404 si la sesión no existe. |
+| `POST` | `/api/reset` | Borra el contenido de `out/` y las sesiones en memoria. 403 si el servidor no tiene `ACCESS_KEY`, 401 si la clave es incorrecta, 409 si hay turnos en curso. |
 | `GET` | `/api/health` | Estado del servicio, proveedor y modelo. No expone secretos. |
 
 Las confirmaciones se envían por `POST /api/chat` como texto ("confirmo …" o "rechazo …"); el botón de la interfaz hace lo mismo.
+
+Antes de una demo conviene llamar a `/api/reset` (con `x-access-key`) para partir de un estado limpio, por ejemplo `curl -X POST -H "x-access-key: $ACCESS_KEY" https://reto-02-aguilar.onrender.com/api/reset`.
 
 ## Estructura
 
@@ -66,5 +72,6 @@ Las confirmaciones se envían por `POST /api/chat` como texto ("confirmo …" o 
 - `src/tools/`: herramientas `contratos_*`.
 - `src/domain/`, `src/infra/`: lógica de extracción, validación y archivos.
 - `web/`: interfaz de chat.
+- `modulo/`: agente empaquetado como módulo reutilizable (bonus), generado con `npm run build:modulo`.
 - `fixtures/`: datos de entrada, solo lectura.
 - `out/`: salida generada (maestro, archivos, historial, alertas, log).

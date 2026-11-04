@@ -1,7 +1,5 @@
 # SOLUCION — Registro de Contratos Vigentes
 
-> Estado: en construcción. Este documento describe el diseño y lo que se implementa. La cobertura de cada historia de usuario se verifica en la integración final (M7) y hasta entonces figura como pendiente de verificar.
-
 ## 1. Problema
 
 El maestro de contratos vigentes está congelado desde el corte de 2026-05-30: los contratos nuevos no se registran y no se sabe qué vence ni qué pólizas faltan. Le duele a la analista administrativa, dueña del maestro, y a gerencia, que no tiene visibilidad de vencimientos ni de garantías pendientes.
@@ -10,7 +8,7 @@ El maestro de contratos vigentes está congelado desde el corte de 2026-05-30: l
 
 ```
 Navegador (web/)
-   │  POST /api/chat · GET /api/sessions/:id · GET /api/health
+   │  POST /api/chat · POST /api/reset · GET /api/sessions/:id · GET /api/health
    ▼
 Servidor node:http (src/server.ts)
    │  rate limit · ACCESS_KEY · tamaños · sesiones en memoria
@@ -35,14 +33,14 @@ Dominio e infraestructura (src/domain/, src/infra/)
 
 - Bucle de herramientas con `stopWhen: stepCountIs(25)`: tope de 25 pasos por turno.
 - Tope de tokens por sesión (`MAX_SESSION_TOKENS`, 200000 por defecto), tope de 2000 caracteres por mensaje, rate limit por IP y timeout de 60 s por llamada al modelo.
-- **Confirmación humana en código**: `contratos_registrar` sin `confirmado` se detiene si hay campos en revisión y devuelve `revision[]`. El servidor arma la pregunta de confirmación a partir de ese resultado, no del texto del modelo. Solo deja pasar `confirmado: true` si la sesión tiene esa revisión pendiente para ese `mensaje_id` y la persona confirma en su último mensaje.
+- **Confirmación humana en código**: `contratos_registrar` sin `confirmado` se detiene si hay campos en revisión y devuelve `revision[]`. El servidor arma la pregunta de confirmación a partir de ese resultado, no del texto del modelo. Solo deja pasar `confirmado: true` si la sesión tiene esa revisión pendiente para ese `mensaje_id`, la persona confirma en su último mensaje y la confirmación está ligada: hay un único pendiente, o el texto menciona el `mensaje_id` o un valor propuesto. Los pendientes se guardan por `mensaje_id`. El override `contrato` solo se acepta junto con `confirmado: true` y solo para campos que estén en `requiere_revision` (el servidor lo recalcula sin override); `contratos_validar` ya no acepta `contrato`. Los rechazos devuelven `ok:false` sin tocar el maestro.
 - Un error de herramienta o del proveedor se explica en lenguaje claro y la sesión sigue viva. Un error en un mensaje no aborta el lote.
 - **Roadmap**: migrar la confirmación al mecanismo `toolApproval` del AI SDK. El gate actual ya es código; el cambio sería de integración, no de regla.
 
 ## 4. Elección del modelo
 
 - **Proveedor y modelo**: Anthropic, `claude-haiku-5-5` por defecto, configurable con `LLM_MODEL`. Se eligió por soporte fiable de llamadas a herramientas y por costo bajo para un flujo de muchas llamadas cortas.
-- **Costo por caso procesado**: medido en una corrida real con `claude-haiku-5-5` (2026-11-03): 6 mensajes + confirmación de 006 = 53.358 tokens totales (39.041 + 14.317; `usage.tokens`, sin desglose entrada/salida). **Precio por token no verificado**: `<COSTO>` en USD queda pendiente de multiplicar por la tarifa vigente de Anthropic con su fecha. Una sola corrida, no es un promedio.
+- **Costo por caso procesado**: 53.358 tokens por lote completo, medidos en una corrida real con `claude-haiku-5-5` (2026-11-03); costo en USD no calculado porque el precio por token no se verificó. (6 mensajes + confirmación de 006: 39.041 + 14.317 tokens, `usage.tokens`, sin desglose entrada/salida; una sola corrida, no es un promedio.)
 - **Prompt caching**: se evaluará sobre el system prompt si el costo medido lo justifica.
 
 ## 5. Estrategia de extracción
@@ -72,7 +70,8 @@ Propuesta para que el proceso viva después de la demo. Se resume en una página
 |---|---|---|---|
 | Patrón del agente | ReAct acotado: un agente que observa cada resultado antes de elegir la siguiente acción | Plan-and-Execute | `registrar` depende de lo que devuelve `validar`; un plan fijo no reacciona a esos resultados. |
 | Qué recibe la herramienta | `mensaje_id`; la herramienta relee el dato del fixture | Pasar el objeto contrato completo desde el modelo | Impide que el modelo invente o redondee un valor. El costo es que el modelo solo opera sobre mensajes existentes. |
-| Quién autoriza el registro | Gate en código, según `requiere_revision` | Flag `confirmado` decidido por el modelo | Un modelo puede auto-aprobarse si decide el flag. En código, la condición no depende del texto del modelo. |
+| Quién autoriza el registro | Gate en código, según `requiere_revision`, con confirmación ligada a `mensaje_id` y override limitado a campos en revisión | Flag `confirmado` decidido por el modelo | Un modelo puede auto-aprobarse si decide el flag. En código, la condición no depende del texto del modelo. Se cerró un bypass: el override `contrato` ya no salta el gate (tests adversariales en `tests/core/gate-adversarial.test.ts`). |
+| Código interno en español | Nombres de dominio del PRD (lenguaje ubicuo) | Código en inglés | Coincide con el PRD y los fixtures. Inglés queda como roadmap. |
 | Extracción de valores | Regex por cláusula | Extracción completa con LLM | Los valores son el dato crítico. Regex es auditable y reproducible; el LLM queda para explicar y conversar. |
 | Framework | AI SDK + zod | LangChain / LangGraph | Menos capas para un flujo de 5 herramientas. Las dependencias están fijadas en versiones exactas. |
 | Almacenamiento | Maestro CSV en `out/`, con escritura atómica | Base de datos | Es lo que pide el PRD y basta para la demo. En producción sería una base con control de concurrencia. |
@@ -90,7 +89,7 @@ Propuesta para que el proceso viva después de la demo. Se resume en una página
 
 ## 9. Cobertura
 
-Estado pendiente de verificar en M7 (integración final). Ningún estado se marca como hecho hasta que la prueba de integración lo confirme.
+Verificado en la integración final: `npm test` 33/33 y `tsc --noEmit` limpio. Extras: bonus `modulo/` hecho (generado con `npm run build:modulo`, con test). `contratos_leer_pdf` (P1) no se hizo: se asume texto ya extraído. El código interno está en español por decisión (lenguaje ubicuo del PRD); inglés queda como roadmap.
 
 | HU | Historia | Estado | Qué falta para producción |
 |---|---|---|---|
@@ -118,9 +117,26 @@ Estado pendiente de verificar en M7 (integración final). Ningún estado se marc
 | Remitente no registrado bloquea | El PRD dice que se reporta pero no bloquea | Advertencia |
 | "Periferia es siempre el contratista" | Cierto en los fixtures, frágil como regla | Se identifica por NIT propio |
 | Trade-offs en "sección 6" | El PRD los pone en la sección 7 | Numeración del PRD |
-| `modulo/` como copia del código | El PRD pide no tener copias divergentes | Se generará desde las mismas fuentes (bonus, si da tiempo) |
+| `modulo/` como copia del código | El PRD pide no tener copias divergentes | Generado desde las mismas fuentes con `npm run build:modulo` (bonus hecho) |
 
 **Verificación**: las firmas de la API del AI SDK se confirman contra los tipos instalados en `node_modules`, no de memoria.
+
+### Referentes
+
+Sin citas textuales ni URLs.
+
+| Referente | Dónde se ve en el repo |
+|---|---|
+| Curso DevTalles agentic-patterns. Labs usados: tool use, ReAct, chaining/gates, HITL. Descartados: plan-and-execute, CodeAct, orchestrator/parallel | Tool use en `src/tools/contratos.ts`; ReAct acotado en `src/agent/run.ts`; gate y HITL por código (§3, §7) |
+| Anthropic, "Building effective agents" (2024) | Agente simple con herramientas y gate antes que framework multiagente (§7) |
+| Yao et al., "ReAct" (2022) | Bucle observar/actuar con tope de 25 pasos (§3) |
+| OWASP Top 10 for LLM Applications | Prompt injection tratada como dato, sin herramientas de borrado ni shell, topes de costo (§11) |
+| Chip Huyen, "AI Engineering" (O'Reilly, 2025) | Medición de tokens por lote y decisión de modelo (§4) |
+| R. C. Martin, Clean Architecture | Dominio en `src/domain/` sin dependencias del modelo ni del servidor |
+| Cockburn, Hexagonal | Adaptador de proveedor en `src/llm/adapter.ts`; herramientas como puertos |
+| Fowler, PoEAA | Capas dominio / infraestructura (`src/domain/`, `src/infra/`) |
+| Richardson, Microservices Patterns | Solo como contraste: se mantiene un monolito; el maestro en CSV sería una base en producción (§7) |
+| Nygard, Release It! | Timeouts, topes, rate limit, `/api/health` y degradación de errores (§3, §11) |
 
 ## 11. Riesgos en producción
 
@@ -128,11 +144,11 @@ Estado pendiente de verificar en M7 (integración final). Ningún estado se marc
 |---|---|
 | Prompt injection desde correos o contratos | El contenido se trata como dato. Los valores y el gate están en código. No hay herramientas de borrado ni de shell. |
 | Fuga de la clave de proveedor | Errores redactados, `.env` fuera de la imagen, `/api/health` sin secretos. |
-| Abuso de costo del link público | Tope de pasos, tope de tokens por sesión, tamaño de mensaje, rate limit por IP, timeout y `ACCESS_KEY` opcional. |
-| Escritura concurrente sobre el maestro | Escritura atómica (archivo temporal + renombrar) y bloqueo. Pendiente en producción con base de datos. |
+| Abuso de costo del link público | Tope de pasos, tope de tokens por sesión, tope diario global (`MAX_DAILY_TOKENS`, 2.000.000 por defecto, día UTC), máximo de 500 sesiones vivas con TTL de 2 h, tamaño de mensaje, rate limit por IP (con `x-forwarded-for` solo si `TRUST_PROXY=1` o en Render), timeout y `ACCESS_KEY` opcional comparada en tiempo constante. `POST /api/reset` queda deshabilitado (403) sin `ACCESS_KEY`. Estáticos con control de ruta y cabeceras CSP, `X-Frame-Options` y `nosniff`. |
+| Escritura concurrente sobre el maestro | Escritura atómica (archivo temporal + renombrar). `registrar` es síncrono, así que es atómico dentro de un proceso; no hay mutex ni bloqueo entre procesos. Pendiente en producción con base de datos. |
 | Path traversal o CSV injection | Identificadores validados con regex, rutas dentro de `out/`, prefijo `'` en celdas que empiezan con `= + - @`. |
 | Nombres de cliente variables que generan duplicados | Deduplicación por NIT + objeto, con revisión humana por encima del umbral. |
 | Escaneados sin texto | OCR antes de la extracción. |
 | Datos personales en correos y contratos | Minimizar lo que se guarda en logs; definir retención. |
-| Costo del modelo | Medición real por caso (≈53 mil tokens/lote; `<COSTO>` USD sin verificar), tope de tokens y revisión de precios vigentes. |
+| Costo del modelo | Medición real por caso (≈53 mil tokens/lote; USD sin calcular), tope de tokens y revisión de precios vigentes. |
 | Rotación de claves | Clave en variable de entorno del proveedor de hosting; rotación periódica. |
