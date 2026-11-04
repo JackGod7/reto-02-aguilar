@@ -54,6 +54,8 @@ export interface OpcionesLLM {
 export interface LLMAdapter {
   readonly provider: string;
   readonly model: string;
+  /** false si falta configuración (p. ej. la clave): el servidor rechaza antes de reservar presupuesto. */
+  readonly configurado?: boolean;
   /** Una llamada al modelo; nunca ejecuta herramientas ni decide autorización. */
   generarPaso?(mensajes: MensajePaso[], herramientas: Herramienta[], opciones: OpcionesPasoLLM): Promise<PasoLLM>;
   /** Contrato anterior conservado para adapters de pruebas y clientes existentes. */

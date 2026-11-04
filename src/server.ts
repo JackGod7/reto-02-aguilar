@@ -203,6 +203,7 @@ export function crearServidor(o: ServerOpts): Server {
       }
       if (!body || typeof body !== "object" || typeof body.message !== "string" || body.message.trim() === "") return err(res, 400, "bad_request", "Falta 'message'");
       if (body.message.length > MAX_MENSAJE) return err(res, 400, "message_too_long", `El mensaje excede ${MAX_MENSAJE} caracteres`);
+      if (o.adapter.configurado === false) return err(res, 503, "llm_not_configured", "LLM no configurado: falta ANTHROPIC_API_KEY");
       const requestId = body.requestId;
       if (requestId !== undefined && (typeof requestId !== "string" || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId) || typeof body.sessionId !== "string")) return err(res, 400, "bad_request", "requestId requiere UUID y una sesión creada previamente");
       let session;
@@ -258,15 +259,19 @@ export function crearServidor(o: ServerOpts): Server {
       } finally {
         const conocidos = Math.max(0, session.tokens - antes);
         const known = resultado !== undefined && resultado.usage.known !== false;
+        // Fallo antes de respuesta: se cobra la cota del intento (entrada + salida máxima), no toda la reserva.
+        const cota = !known && typeof resultado?.usage.uncertain === "number" && Number.isFinite(resultado.usage.uncertain)
+          ? Math.min(Math.max(0, resultado.usage.uncertain), Math.max(0, reserva - conocidos)) : null;
+        const retenidos = known ? 0 : cota ?? Math.max(0, reserva - conocidos);
         budget.reserved -= reserva;
-        budget.used += known ? conocidos : Math.max(reserva, conocidos);
-        if (!known) session.unreconciledTokens += Math.max(0, reserva - conocidos);
+        budget.used += conocidos + retenidos;
+        session.unreconciledTokens += retenidos;
         vivas.set(session.id, Date.now());
         ocupadas.delete(session.id);
         // Solo metadatos operativos: sin texto, argumentos, documentos ni errores del SDK.
         try {
           mkdirSync(dirs(directory).out, { recursive: true });
-          appendFileSync(join(dirs(directory).out, "turnos.jsonl"), JSON.stringify({ ts: new Date().toISOString(), sessionId: session.id, requestId: requestId ?? randomUUID(), buildSha, provider: o.adapter.provider, model: o.adapter.model, status, latencyMs: Date.now() - inicio, steps: resultado?.usage.steps ?? null, tokens: known ? conocidos : null, knownTokens: conocidos, usageKnown: known, reservedTokens: known ? 0 : Math.max(0, reserva - conocidos), outcome: status >= 500 ? "provider_error" : resultado?.needsConfirmation ? "review" : resultado?.toolCalls.some((c) => !c.ok) ? "tool_error" : "complete" }) + "\n");
+          appendFileSync(join(dirs(directory).out, "turnos.jsonl"), JSON.stringify({ ts: new Date().toISOString(), sessionId: session.id, requestId: requestId ?? randomUUID(), buildSha, provider: o.adapter.provider, model: o.adapter.model, status, latencyMs: Date.now() - inicio, steps: resultado?.usage.steps ?? null, tokens: known ? conocidos : null, knownTokens: conocidos, usageKnown: known, reservedTokens: retenidos, outcome: status >= 500 ? "provider_error" : resultado?.needsConfirmation ? "review" : resultado?.toolCalls.some((c) => !c.ok) ? "tool_error" : "complete" }) + "\n");
         } catch { /* un fallo diagnóstico no repite los efectos */ }
       }
     }

@@ -135,7 +135,8 @@ export interface RunResult {
   reply: string;
   toolCalls: ToolCallInfo[];
   needsConfirmation: NeedsConfirmation | null;
-  usage: { steps: number; tokens: number; known?: boolean };
+  /** uncertain: cota de tokens de llamadas que fallaron antes de devolver respuesta (solo si known es false). */
+  usage: { steps: number; tokens: number; known?: boolean; uncertain?: number };
 }
 
 /** Estado mutable de un turno; solo lo tocan las funciones de este módulo. */

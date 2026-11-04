@@ -155,7 +155,9 @@ test("LangGraph: fallo de proveedor después de tool conserva evidencia y uso si
   try { await e.run("procesa"); } catch (error) { assert.ok(error instanceof ErrorTurnoGrafo); fallo = error; }
   assert.ok(fallo);
   assert.equal(fallo.partial.toolCalls[0]?.ok, true);
-  assert.deepEqual(fallo.partial.usage, { steps: 2, tokens: 11, known: false });
+  const { uncertain, ...uso } = fallo.partial.usage;
+  assert.deepEqual(uso, { steps: 2, tokens: 11, known: false });
+  assert.ok(typeof uncertain === "number" && uncertain > 0, "cota del intento fallido para el presupuesto");
   assert.equal(e.session.tokens, 11);
   assert.equal(e.session.messages.at(-1)?.toolCalls?.length, 1);
   assert.ok(!fallo.partial.reply.includes("detalle privado"));

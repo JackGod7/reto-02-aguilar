@@ -34,6 +34,10 @@ interface Flujo {
   stop: string;
   /** El stop proviene de un tope (pasos, tokens, tiempo o herramientas): la respuesta lista lo que falta. */
   limite: boolean;
+  /** Cota (entrada + salida máxima) de llamadas que fallaron antes de devolver respuesta. */
+  incierto: number;
+  /** El proveedor respondió sin informar uso: no hay cota y el servidor retiene la reserva. */
+  usoSinInformar: boolean;
 }
 const Estado = Annotation.Root({ flow: Annotation<Flujo>() });
 
@@ -236,7 +240,7 @@ async function turno(o: RunOpts): Promise<RunResult> {
       const remaining = o.maxTokens - o.session.tokens - flow.tokens;
       const outputLimit = Math.min(maxOutput, remaining - inputBound);
       if (inputBytes > positivo(process.env.LLM_MAX_INPUT_BYTES, 200_000, 1_000_000) || outputLimit < 1) return guardar({ ...flow, stop: "El contexto excede la entrada permitida o el presupuesto restante. No envié otra llamada al modelo." });
-      const intentado = { ...flow, steps: flow.steps + 1, usageKnown: false };
+      const intentado = { ...flow, steps: flow.steps + 1, usageKnown: false, incierto: flow.incierto + inputBound + outputLimit };
       guardar(intentado); // Cuenta también el intento que termina con error de proveedor.
       const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -246,9 +250,13 @@ async function turno(o: RunOpts): Promise<RunResult> {
           generar(history, herramientas, { system: o.prompt, signal: controller.signal, maxOutputTokens: outputLimit }),
           new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("tiempo del modelo agotado")); }, Math.max(1, deadline - Date.now())); }),
         ]);
+      } catch (error) {
+        // Sin clave no hubo transporte: el intento no consume tokens.
+        if (error instanceof Error && error.message.startsWith("LLM no configurado")) guardar({ ...intentado, incierto: flow.incierto });
+        throw error;
       } finally { if (timer) clearTimeout(timer); }
       const tokens = intentado.tokens + (Number.isFinite(paso.tokens) && paso.tokens >= 0 ? paso.tokens : 0);
-      const actualizado = { ...intentado, tokens, usageKnown: flow.usageKnown && paso.usoConocido && Number.isFinite(paso.tokens) && paso.tokens >= 0 };
+      const actualizado = { ...intentado, tokens, incierto: flow.incierto, usoSinInformar: flow.usoSinInformar || !paso.usoConocido, usageKnown: flow.usageKnown && paso.usoConocido && Number.isFinite(paso.tokens) && paso.tokens >= 0 };
       guardar(actualizado);
       if (!paso.usoConocido) throw new Error("El proveedor no informó uso de tokens; turno detenido");
       if (tokens > o.maxTokens - o.session.tokens) return guardar({ ...actualizado, stop: "El proveedor informó un uso superior al presupuesto; no ejecuté sus herramientas." });
@@ -325,7 +333,7 @@ async function turno(o: RunOpts): Promise<RunResult> {
   const previo = await graph.getState(config);
   const anterior = previo.values.flow as Flujo | undefined;
   const history = anterior?.history ?? o.session.messages.map((m): MensajePaso => ({ role: m.role, content: m.text }));
-  const reinicio: Flujo = { history, queue: anterior?.queue ?? [], review: anterior?.review ?? null, decision: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "", limite: false };
+  const reinicio: Flujo = { history, queue: anterior?.queue ?? [], review: anterior?.review ?? null, decision: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "", limite: false, incierto: 0, usoSinInformar: false };
   actual = reinicio;
   o.session.messages.push({ role: "user", text: o.message, ts: new Date().toISOString() });
   let fallo: unknown;
@@ -358,6 +366,6 @@ async function turno(o: RunOpts): Promise<RunResult> {
     const baseReply = f.reply && !f.stop ? [f.reply, herramientas].filter(Boolean).join("\n\n") : herramientas;
     const reply = pending ? [baseReply, pending.pregunta].filter(Boolean).join("\n") : baseReply;
     o.session.messages.push({ role: "assistant", text: reply, toolCalls: structuredClone(f.toolCalls), ts: new Date().toISOString() });
-    return { reply, toolCalls: f.toolCalls, needsConfirmation: pending, usage: { steps: f.steps, tokens: f.tokens, known: f.usageKnown } };
+    return { reply, toolCalls: f.toolCalls, needsConfirmation: pending, usage: { steps: f.steps, tokens: f.tokens, known: f.usageKnown, ...(!f.usageKnown && !f.usoSinInformar ? { uncertain: f.incierto } : {}) } };
   }
 }

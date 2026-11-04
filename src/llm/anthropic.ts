@@ -110,7 +110,7 @@ export function crearAnthropicAdapter(
   }
 
   return {
-    provider: "anthropic", model, generarPaso,
+    provider: "anthropic", model, configurado: Boolean(apiKey), generarPaso,
     async enviar(mensajes, herramientas, opciones) {
       if (!Number.isSafeInteger(opciones.maxPasos) || opciones.maxPasos <= 0) throw new Error("Tope de pasos LLM inválido");
       const respuesta = await generarPaso(mensajes, herramientas, { system: opciones.system });
