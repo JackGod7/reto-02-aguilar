@@ -360,7 +360,7 @@ function nodoDecision(s: Flujo, config: LangGraphRunnableConfig): Cambio {
   const d = s.respuestaHumana;
   if (!r || !d || d.reviewId !== r.reviewId || d.operationHash !== r.operationHash || decisionHumana(r, d.message)?.approved !== d.approved) throw new Error("La decisión no corresponde a la revisión pendiente");
   if (d.approved) return guardar(t, { respuestaHumana: d });
-  return guardar(t, { review: null, respuestaHumana: null, reply: `Registro de ${r.mensaje_id} cancelado.`, history: [...s.history, { role: "assistant", content: `La persona rechazó registrar ${r.mensaje_id}.` }] });
+  return guardar(t, { review: null, respuestaHumana: null, reply: `Registro de ${r.mensaje_id} cancelado.` });
 }
 
 async function nodoRegistroAprobado(s: Flujo, config: LangGraphRunnableConfig): Promise<Cambio> {
@@ -382,7 +382,8 @@ const rutaInicio = (s: Flujo) => s.queue.length ? "herramienta" : "modelo";
 const rutaDesdeModelo = (s: Flujo) => s.stop || !s.queue.length ? END : "herramienta";
 const rutaDesdeHerramienta = (s: Flujo) => s.stop ? END : "detectar_revision";
 const rutaDesdeRevision = (s: Flujo) => s.stop ? END : s.review ? "pausa" : s.queue.length ? "herramienta" : "modelo";
-const rutaDesdeDecision = (s: Flujo) => s.review ? "registro_aprobado" : s.queue.length ? "herramienta" : "modelo";
+// Tras un rechazo sin cola el turno termina: el historial acabaría en assistant y la API lo rechaza (prefill).
+const rutaDesdeDecision = (s: Flujo) => s.review ? "registro_aprobado" : s.queue.length ? "herramienta" : END;
 
 /** Un modelo por nodo, una herramienta por nodo, revisión y pausa en nodos independientes. Se compila una vez. */
 const grafo = new StateGraph(Estado)
@@ -397,7 +398,7 @@ const grafo = new StateGraph(Estado)
   .addConditionalEdges("herramienta", rutaDesdeHerramienta, [END, "detectar_revision"])
   .addConditionalEdges("detectar_revision", rutaDesdeRevision, [END, "pausa", "herramienta", "modelo"])
   .addEdge("pausa", "decision")
-  .addConditionalEdges("decision", rutaDesdeDecision, ["registro_aprobado", "herramienta", "modelo"])
+  .addConditionalEdges("decision", rutaDesdeDecision, ["registro_aprobado", "herramienta", END])
   .addEdge("registro_aprobado", "detectar_revision")
   .compile({ checkpointer });
 

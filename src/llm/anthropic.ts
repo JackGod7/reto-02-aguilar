@@ -66,6 +66,8 @@ export function crearAnthropicAdapter(
       ? AbortSignal.any([opciones.signal, AbortSignal.timeout(timeoutMs)])
       : AbortSignal.timeout(timeoutMs);
     const mensajesModelo = historial(mensajes, opciones.system);
+    // Los modelos 5.x no admiten prefill: un historial terminado en assistant es un 400 seguro.
+    if (mensajesModelo.at(-1) instanceof AIMessage) throw new Error("Historial inválido: no puede terminar en assistant (prefill no soportado)");
     try {
       signal.throwIfAborted();
       const modelo = crearModelo({ model, apiKey, maxTokens: Math.min(maxSalida, maxTokens), maxRetries: 0, clientOptions: { timeout: timeoutMs, maxRetries: 0 } });
