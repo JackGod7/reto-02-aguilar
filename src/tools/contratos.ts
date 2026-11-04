@@ -23,11 +23,14 @@ export interface ToolContext {
   sessionId: string;
 }
 
-export interface ToolDef<A extends z.ZodType> {
+/** `args` es un objeto plano de esquemas zod (cada campo con .describe()); el esquema estricto se construye con `esquema(args)`. */
+export interface ToolDef<A extends z.ZodRawShape> {
   description: string;
   args: A;
-  execute(args: z.infer<A>, ctx: ToolContext): Promise<string>;
+  execute(args: z.infer<z.ZodObject<A>>, ctx: ToolContext): Promise<string>;
 }
+
+export const esquema = <A extends z.ZodRawShape>(args: A) => z.object(args).strict();
 
 const HOY_DEFECTO = "2026-09-03";
 const ok = (data: unknown): string => JSON.stringify({ ok: true, data });
@@ -74,7 +77,11 @@ async function envolver(
     return r.respuesta;
   } catch (e) {
     const m = msgError(e);
-    escribirLog(ctx.directory, { herramienta, mensaje_id: mensajeId, ok: false, resumen: `error: ${m.slice(0, 120)}` });
+    try {
+      escribirLog(ctx.directory, { herramienta, mensaje_id: mensajeId, ok: false, resumen: `error: ${m.slice(0, 120)}` });
+    } catch {
+      // el log no debe romper el contrato "execute nunca lanza"
+    }
     return fail(m);
   }
 }
@@ -93,11 +100,13 @@ const overrideArg = z
   .optional()
   .describe("Corrección opcional, solo de campos que estén en revisión y solo junto con confirmado:true (el servidor lo verifica)");
 
-export const leer_buzon: ToolDef<z.ZodObject<{}, z.core.$strict>> = {
+const ARGS_LEER_BUZON = {};
+export const leer_buzon: ToolDef<typeof ARGS_LEER_BUZON> = {
   description: "Lista los mensajes del buzón pendientes de procesar (excluye los ya procesados).",
-  args: z.object({}).strict(),
-  async execute(_args, ctx) {
+  args: ARGS_LEER_BUZON,
+  async execute(args, ctx) {
     return envolver("leer_buzon", ctx, null, () => {
+      esquema(ARGS_LEER_BUZON).parse(args);
       const procesados = new Set(leerProcesados(ctx.directory));
       const mensajes = listarIds(ctx.directory)
         .filter((id) => !procesados.has(id))
@@ -114,12 +123,13 @@ export const leer_buzon: ToolDef<z.ZodObject<{}, z.core.$strict>> = {
   },
 };
 
-export const extraer: ToolDef<z.ZodObject<{ mensaje_id: typeof mensajeId }, z.core.$strict>> = {
+const ARGS_EXTRAER = { mensaje_id: mensajeId };
+export const extraer: ToolDef<typeof ARGS_EXTRAER> = {
   description: "Extrae los datos de contrato de un mensaje, con confianza por campo.",
-  args: z.object({ mensaje_id: mensajeId }).strict(),
+  args: ARGS_EXTRAER,
   async execute(args, ctx) {
     return envolver("extraer", ctx, null, () => {
-      const p = extraer.args.parse(args);
+      const p = esquema(ARGS_EXTRAER).parse(args);
       const { ext } = analizar(ctx.directory, p.mensaje_id);
       if (!ext.tiene_contrato || !ext.contrato) {
         return { respuesta: ok({ tiene_contrato: false, motivo: ext.motivo ?? ext.rechazo }), resumen: "sin contrato", ok: true, mid: p.mensaje_id };
@@ -130,38 +140,48 @@ export const extraer: ToolDef<z.ZodObject<{ mensaje_id: typeof mensajeId }, z.co
   },
 };
 
-export const validar: ToolDef<z.ZodObject<{ mensaje_id: typeof mensajeId }, z.core.$strict>> = {
-  description: "Clasifica el mensaje (nuevo, actualizacion, duplicado, rechazado) y lista campos a revisar.",
-  args: z.object({ mensaje_id: mensajeId }).strict(),
+const ARGS_VALIDAR = {
+  mensaje_id: mensajeId,
+  contrato: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Propuesta opcional de valores; solo informativa: no cambia la clasificación ni los campos en revisión, que el servidor calcula de su propia extracción"),
+};
+export const validar: ToolDef<typeof ARGS_VALIDAR> = {
+  description: "Clasifica el mensaje (nuevo, actualizacion, duplicado, rechazado) y lista campos a revisar, sin escribir nada; un contrato propuesto solo se compara de forma informativa.",
+  args: ARGS_VALIDAR,
   async execute(args, ctx) {
     return envolver("validar", ctx, null, () => {
-      const p = validar.args.parse(args);
-      const { val } = analizar(ctx.directory, p.mensaje_id);
-      return { respuesta: ok(val), resumen: `clasificación=${val.clasificacion}`, ok: true, mid: p.mensaje_id };
+      const p = esquema(ARGS_VALIDAR).parse(args);
+      const { ext, val } = analizar(ctx.directory, p.mensaje_id);
+      if (!p.contrato) return { respuesta: ok(val), resumen: `clasificación=${val.clasificacion}`, ok: true, mid: p.mensaje_id };
+      // Informativo: nada de esto altera `val` (calculado solo con la extracción del servidor) ni habilita registrar.
+      const base = (ext.contrato ?? {}) as Record<string, unknown>;
+      const diferencias_propuesta = Object.fromEntries(
+        Object.entries(p.contrato)
+          .filter(([k, v]) => JSON.stringify(base[k] ?? null) !== JSON.stringify(v ?? null))
+          .map(([k, v]) => [k, { servidor: base[k] ?? null, propuesto: v }]),
+      );
+      const campos_fuera_de_revision = Object.keys(p.contrato).filter((k) => !val.requiere_revision.includes(k));
+      return {
+        respuesta: ok({ ...val, diferencias_propuesta, campos_fuera_de_revision }),
+        resumen: `clasificación=${val.clasificacion}`,
+        ok: true,
+        mid: p.mensaje_id,
+      };
     });
   },
 };
 
-export const registrar: ToolDef<
-  z.ZodObject<
-    {
-      mensaje_id: typeof mensajeId;
-      contrato: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
-      confirmado: z.ZodOptional<z.ZodBoolean>;
-      hoy: z.ZodOptional<z.ZodString>;
-    },
-    z.core.$strict
-  >
-> = {
-  description: "Registra el contrato en el maestro. Requiere confirmado:true si hay campos a revisar.",
-  args: z
-    .object({
-      mensaje_id: mensajeId,
-      contrato: overrideArg,
-      confirmado: z.boolean().optional().describe("true solo tras confirmación explícita del usuario"),
-      hoy: hoyArg.optional().describe("Fecha de registro YYYY-MM-DD; por defecto la fecha de referencia"),
-    })
-    .strict(),
+const ARGS_REGISTRAR = {
+  mensaje_id: mensajeId,
+  contrato: overrideArg,
+  confirmado: z.boolean().optional().describe("true solo tras confirmación explícita del usuario"),
+  hoy: hoyArg.optional().describe("Fecha de registro YYYY-MM-DD; por defecto la fecha de referencia"),
+};
+export const registrar: ToolDef<typeof ARGS_REGISTRAR> = {
+  description: "Registra el contrato del mensaje en el maestro y archiva su adjunto, o devuelve los campos en revisión si falta la confirmación explícita de la persona (confirmado:true).",
+  args: ARGS_REGISTRAR,
   async execute(args, ctx) {
     const mid = typeof (args as { mensaje_id?: unknown }).mensaje_id === "string" ? (args as { mensaje_id: string }).mensaje_id : null;
     return envolver("registrar", ctx, mid, () => registrarSync(args, ctx));
@@ -179,7 +199,7 @@ const rechazo = (error: string, resumen: string, extra: Record<string, unknown> 
  * Anti-bypass del gate HITL: el override solo es válido con confirmación y solo sobre campos
  * que el servidor (no el modelo) marca en revisión para ese mensaje.
  */
-function validarOverride(p: z.infer<typeof registrar.args>, ctx: ToolContext): Resultado | null {
+function validarOverride(p: z.infer<z.ZodObject<typeof ARGS_REGISTRAR>>, ctx: ToolContext): Resultado | null {
   if (!p.contrato || Object.keys(p.contrato).length === 0) return null;
   if (p.confirmado !== true) {
     return rechazo("override `contrato` rechazado: requiere confirmado:true tras confirmación de la persona", "override sin confirmar");
@@ -258,7 +278,7 @@ function registrarNuevo(ctx: ToolContext, a: Analisis, c: Contrato, mensajeId: s
 }
 
 function registrarSync(args: unknown, ctx: ToolContext): Resultado {
-  const p = registrar.args.parse(args);
+  const p = esquema(ARGS_REGISTRAR).parse(args);
   const hoy = p.hoy ?? process.env.HOY ?? HOY_DEFECTO;
   if (!esFechaIso(hoy)) return rechazo("hoy inválido", "hoy inválido");
   const veto = validarOverride(p, ctx);
@@ -301,12 +321,13 @@ function registrarSync(args: unknown, ctx: ToolContext): Resultado {
   };
 }
 
-export const alertas: ToolDef<z.ZodObject<{ hoy: z.ZodString }, z.core.$strict>> = {
-  description: "Genera out/alertas.md: vencimientos, pólizas pendientes y registros recientes.",
-  args: z.object({ hoy: hoyArg }).strict(),
+const ARGS_ALERTAS = { hoy: hoyArg };
+export const alertas: ToolDef<typeof ARGS_ALERTAS> = {
+  description: "Genera out/alertas.md con vencimientos, pólizas pendientes y registros recientes a la fecha dada.",
+  args: ARGS_ALERTAS,
   async execute(args, ctx) {
     return envolver("alertas", ctx, null, () => {
-      const p = alertas.args.parse(args);
+      const p = esquema(ARGS_ALERTAS).parse(args);
       if (!esFechaIso(p.hoy)) return { respuesta: fail("hoy inválido"), resumen: "hoy inválido", ok: false };
       const a = calcularAlertas(leerMaestro(ctx.directory), p.hoy);
       const ruta = escribirTextoOut(ctx.directory, "alertas.md", renderAlertasMd(a, p.hoy));

@@ -223,8 +223,8 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
     return el('details', { class: 'tool' },
       el('summary', null,
         el('strong', null, String(tc.name || 'herramienta')),
-        el('span', { class: 'badge ' + (tc.ok ? 'ok' : 'bad') }, tc.ok ? 'ok' : 'error')),
-      el('div', { style: 'margin-top:6px' }, 'Resumen: ', tc.resumen || '—'),
+        el('span', { class: 'badge ' + (tc.ok ? 'ok' : 'bad') }, tc.ok ? 'ok' : 'error'),
+        el('span', { class: 'resumen', style: 'margin-left:8px;font-weight:normal' }, String(tc.resumen || '—'))),
       el('pre', { class: 'code' }, 'Args:\n' + argsText));
   }
 

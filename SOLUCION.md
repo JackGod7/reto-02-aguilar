@@ -47,6 +47,7 @@ Dominio e infraestructura (src/domain/, src/infra/)
 
 - **Proveedor y modelo**: Anthropic, `claude-haiku-5-5` por defecto, configurable con `LLM_MODEL`. Se eligió por soporte fiable de llamadas a herramientas y por costo bajo para un flujo de muchas llamadas cortas.
 - **Costo por caso procesado**: 53.358 tokens por lote completo, medidos en una corrida real con `claude-haiku-5-5` (2026-11-03); costo en USD no calculado porque el precio por token no se verificó. (6 mensajes + confirmación de 006: 39.041 + 14.317 tokens, `usage.tokens`, sin desglose entrada/salida; una sola corrida, no es un promedio.)
+- **Dependencias** (exactas): `ai` (bucle de herramientas), `@ai-sdk/anthropic` (proveedor), `zod` (validación de argumentos de herramientas), `typescript` y `@types/node` (solo typecheck). Nada más.
 - **Prompt caching**: no implementado (sin `cache_control` en `src/`). Se evaluaría sobre el system prompt si el costo medido lo justifica.
 
 ## 5. Estrategia de extracción
@@ -66,7 +67,7 @@ Propuesta para que el proceso viva después de la demo. Se resume en una página
 1. **Canal único**: un buzón de contratos administrado por la analista administrativa, que es dueña del maestro. Dirección propuesta: `contratos@periferia.example` (ficticia; la real la define Periferia).
 2. **Obligación del comercial**: enviar el PDF firmado, los otrosíes y las actas de terminación en un máximo de 3 días hábiles desde la firma, con asunto `[CONTRATO|OTROSÍ|TERMINACIÓN] <cliente> - <id>`.
 3. **Acuse automático**: el agente responde en un máximo de 15 minutos con clasificación, campos dudosos y lo que falta.
-4. **Excepciones y escalamiento**: contrato sin firma se devuelve al comercial. Contrato sin valor o plazo claro pasa a revisión humana. Sin respuesta del comercial en 5 días hábiles, se escala al director comercial.
+4. **Excepciones y escalamiento**: contrato sin firma se devuelve al comercial. Contrato sin valor o plazo claro pasa a revisión de la analista administrativa y, si no se resuelve, del director comercial. Sin respuesta del comercial en 5 días hábiles, se escala al director comercial.
 5. **Cierre del gap jun–ago 2026**: campaña de 2 semanas. Cada comercial reenvía sus contratos firmados desde 2026-05-30 y se cruza con facturación para detectar faltantes.
 6. **Indicador mensual**: porcentaje de clientes facturados en el mes con contrato vigente en el maestro (meta ≥ 95 %), más el tiempo entre firma y registro.
 
@@ -95,7 +96,7 @@ Propuesta para que el proceso viva después de la demo. Se resume en una página
 
 ## 9. Cobertura
 
-Verificado en la integración final: `npm test` 38/38 (2026-11-03) y `tsc --noEmit` limpio. Extras: bonus `modulo/` hecho (generado con `npm run build:modulo`, con test). `contratos_leer_pdf` (P1) no se hizo: se asume texto ya extraído. El código interno está en español por decisión (lenguaje ubicuo del PRD); inglés queda como roadmap.
+Verificado en la integración final: `npm test` en verde (2026-11-03) y `tsc --noEmit` limpio. Extras: bonus `modulo/` hecho (generado con `npm run build:modulo`, con test). `contratos_leer_pdf` (P1) no se hizo: se asume texto ya extraído. El código interno está en español por decisión (lenguaje ubicuo del PRD); inglés queda como roadmap.
 
 | HU | Historia | Estado | Qué falta para producción |
 |---|---|---|---|
@@ -152,6 +153,9 @@ Sin citas textuales ni URLs.
 | Path traversal o CSV injection | Identificadores validados con regex, rutas dentro de `out/`, prefijo `'` en celdas que empiezan con `= + - @`. |
 | Nombres de cliente variables que generan duplicados | Deduplicación por NIT + objeto, con revisión humana por encima del umbral. |
 | Escaneados sin texto | OCR antes de la extracción. |
+| Falsos duplicados por variaciones del nombre del cliente | Dedupe por `nit_cliente` antes que por nombre. |
+| El modelo redondea un valor o infiere una fecha | El valor registrado sale de la herramienta; el modelo solo propone y la persona confirma. |
+| Pregunta abierta: dueño del maestro sin área legal | Queda fijado en la regla de gobierno (§6): la analista administrativa. |
 | Datos personales en correos y contratos | Minimizar lo que se guarda en logs; definir retención. |
 | Costo del modelo | Medición real por caso (≈53 mil tokens/lote; USD sin calcular), tope de tokens y revisión de precios vigentes. |
 | Rotación de claves | Clave en variable de entorno del proveedor de hosting; rotación periódica. |

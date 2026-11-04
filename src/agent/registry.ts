@@ -9,7 +9,7 @@ export interface ToolContext {
 
 interface ToolLike {
   description: string;
-  args: z.ZodType;
+  args: z.ZodRawShape;
   execute(args: never, ctx: ToolContext): Promise<string>;
 }
 
@@ -22,7 +22,7 @@ export function construirHerramientas(ejecutor: Ejecutor): Herramienta[] {
     const t = def as unknown as ToolLike;
     if (!t || typeof t !== "object" || typeof t.execute !== "function" || !t.args) continue;
     const name = `contratos_${nombre}`;
-    out.push({ name, description: t.description, inputSchema: t.args, execute: (args) => ejecutor(name, args) });
+    out.push({ name, description: t.description, inputSchema: z.object(t.args).strict(), execute: (args) => ejecutor(name, args) });
   }
   return out;
 }
@@ -31,7 +31,7 @@ export async function ejecutarTool(nombre: string, args: unknown, ctx: ToolConte
   try {
     const def = (contratos as Record<string, unknown>)[nombre.replace(/^contratos_/, "")] as ToolLike | undefined;
     if (!def || typeof def.execute !== "function") return JSON.stringify({ ok: false, error: `herramienta desconocida: ${nombre}` });
-    const parsed = def.args.safeParse(args);
+    const parsed = z.object(def.args).strict().safeParse(args);
     if (!parsed.success) return JSON.stringify({ ok: false, error: `argumentos inválidos: ${parsed.error.message.slice(0, 300)}` });
     return await def.execute(parsed.data as never, ctx);
   } catch {

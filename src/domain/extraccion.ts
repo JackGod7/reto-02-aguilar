@@ -231,8 +231,11 @@ export function extraerContrato(
     advertencias.push("Póliza condicional a órdenes de servicio de alto valor; se asume requerida (cumplimiento)");
   }
 
+  // PRD 7.2: sin id en el documento → AUTO-<año>-<secuencia> (confianza 0: lo revisa la persona).
+  const anio = (inicio || "").slice(0, 4) || String(new Date().getUTCFullYear());
+  const seq = maestro.filter((f) => f.id_contrato.startsWith(`AUTO-${anio}-`)).length + 1;
   const contrato: Contrato = {
-    id_contrato: idContrato,
+    id_contrato: idContrato || `AUTO-${anio}-${String(seq).padStart(3, "0")}`,
     cliente: cliente ? tituloEs(cliente.nombre) : "",
     nit_cliente: nitCliente,
     pais,

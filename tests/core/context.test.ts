@@ -28,6 +28,14 @@ test("sin archivo de conocimiento no lanza y devuelve solo el prompt", () => {
   assert.equal(s, "PROMPT_BASE");
 });
 
+test("sin agent/prompt.md o vacío lanza (fail fast)", () => {
+  const d = mkdtempSync(join(tmpdir(), "ctx-"));
+  assert.throws(() => buildSystemPrompt(d), /prompt/i);
+  mkdirSync(join(d, "agent"));
+  writeFileSync(join(d, "agent/prompt.md"), "  \n");
+  assert.throws(() => buildSystemPrompt(d), /prompt/i);
+});
+
 test("con el repo real incluye ambos", () => {
   const s = buildSystemPrompt(process.cwd());
   assert.ok(s.includes("## Conocimiento del proceso"));

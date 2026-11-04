@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { registrar, validar } from "../../src/tools/contratos.ts";
@@ -43,10 +43,38 @@ test("override con confirmado:true pero clave fuera de revisión: ok:false", asy
   assert.equal(maestroCrudo(ctx.directory), antes);
 });
 
-test("validar ya no acepta override", async () => {
+/** Archivos bajo out/ (salvo el log de auditoría) con su contenido. */
+function archivosOut(d: string): Record<string, string> {
+  const res: Record<string, string> = {};
+  const walk = (dir: string): void => {
+    if (!existsSync(dir)) return;
+    for (const n of readdirSync(dir)) {
+      const f = join(dir, n);
+      if (statSync(f).isDirectory()) walk(f);
+      else if (n !== "log.jsonl") res[f] = readFileSync(f, "utf8");
+    }
+  };
+  walk(join(d, "out"));
+  return res;
+}
+
+test("validar con contrato es solo informativo: ok:true, clasificación del servidor, sin escritura", async () => {
   const ctx = nuevoDir();
-  const r = j(await validar.execute({ mensaje_id: "msg-001", contrato: { valor: 1 } } as never, ctx));
-  assert.equal(r.ok, false);
+  const antes = maestroCrudo(ctx.directory);
+  const base = j(await validar.execute({ mensaje_id: "msg-001" }, ctx)).data!;
+  const instantanea = archivosOut(ctx.directory);
+  const r = j(await validar.execute({ mensaje_id: "msg-001", contrato: { valor: 1, cliente: "ATACANTE SAS" } }, ctx));
+  assert.equal(r.ok, true, r.error ?? "");
+  assert.equal(r.data!.clasificacion, base.clasificacion);
+  assert.deepEqual(r.data!.requiere_revision, base.requiere_revision);
+  assert.ok(r.data!.diferencias_propuesta && typeof r.data!.diferencias_propuesta === "object");
+  assert.deepEqual([...(r.data!.campos_fuera_de_revision as string[])].sort(), ["cliente", "valor"]);
+  assert.equal(maestroCrudo(ctx.directory), antes);
+  assert.deepEqual(archivosOut(ctx.directory), instantanea);
+  // y no habilita registrar: sigue rechazando el override fuera de revisión
+  const reg = j(await registrar.execute({ mensaje_id: "msg-001", hoy: HOY, confirmado: true, contrato: { valor: 1 } }, ctx));
+  assert.equal(reg.ok, false);
+  assert.equal(maestroCrudo(ctx.directory), antes);
 });
 
 test("flujo legítimo 006: confirmado + override de campo en revisión funciona", async () => {

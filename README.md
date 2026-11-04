@@ -52,6 +52,12 @@ npm run typecheck
 npm run build:modulo   # regenera modulo/ (bonus) desde agent/prompt.md y src/knowledge/
 ```
 
+## Dónde vive el ciclo
+
+`src/agent/run.ts` orquesta el turno (prompt, gate HITL, tope de pasos, sesión) y el adapter delega la iteración modelo-herramientas al AI SDK. Es provider-agnóstico: cambiar de proveedor es escribir otra implementación de `LLMAdapter`, sin tocar `run.ts`.
+
+Sin streaming: la respuesta llega completa; el indicador 'pensando…' cubre la espera.
+
 ## API
 
 | Método | Ruta | Descripción |
@@ -76,3 +82,17 @@ Antes de una demo conviene llamar a `/api/reset` (con `x-access-key`) para parti
 - `modulo/`: agente empaquetado como módulo reutilizable (bonus), generado con `npm run build:modulo`.
 - `fixtures/`: datos de entrada, solo lectura.
 - `out/`: salida generada (maestro, archivos, historial, alertas, log).
+
+## Prompt de demo (PRD §11)
+
+En una sesión nueva del chat:
+
+```
+Procesa el buzón de contratos con fecha de hoy 2026-09-03. Registra lo que
+esté limpio, muéstrame lo que requiere revisión campo por campo y termina
+con el reporte de alertas. No registres nada dudoso sin preguntarme.
+```
+
+Luego responde `confirmo el valor 0 y la fecha fin 2027-08-31` y `msg-006` queda registrado.
+
+Demo sin modelo: `npm install && node demo.ts` (equivalente a `bun install && bun run demo.ts`).

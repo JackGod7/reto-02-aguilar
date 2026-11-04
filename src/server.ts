@@ -7,7 +7,7 @@ import { crearAnthropicAdapter } from "./llm/anthropic.ts";
 import type { LLMAdapter } from "./llm/adapter.ts";
 import { crearSesion, limpiarSesiones, obtenerSesion, olvidarSesion } from "./agent/session.ts";
 import type { ejecutarTool } from "./agent/registry.ts";
-import { cargarPrompt, ejecutarTurno, MAX_MENSAJE } from "./agent/run.ts";
+import { ejecutarTurno, MAX_MENSAJE } from "./agent/run.ts";
 import { buildSystemPrompt } from "./agent/context.ts";
 
 export interface ServerOpts {
@@ -74,7 +74,7 @@ async function leerCuerpo(req: IncomingMessage, max = 16_384): Promise<string | 
 
 export function crearServidor(o: ServerOpts): Server {
   // Prompt + conocimiento del proceso (src/knowledge) en el contexto del agente; ver docs/adr/003.
-  const prompt = o.prompt ?? (buildSystemPrompt(resolve(import.meta.dirname, "..")) || cargarPrompt());
+  const prompt = o.prompt ?? buildSystemPrompt(resolve(import.meta.dirname, ".."));
   const maxTokens = o.maxSessionTokens ?? 200_000;
   const limite = o.rateLimit ?? 30;
   const webDir = resolve(o.webDir ?? "web");

@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, stepCountIs, tool } from "ai";
-import type { LLMAdapter, Herramienta, Mensaje, RespuestaLLM } from "./adapter.ts";
+import type { LLMAdapter, Herramienta, Mensaje, OpcionesLLM, RespuestaLLM } from "./adapter.ts";
 
 export function crearAnthropicAdapter(env: NodeJS.ProcessEnv = process.env): LLMAdapter {
   const model = env.LLM_MODEL || "claude-haiku-5-5";
@@ -9,7 +9,7 @@ export function crearAnthropicAdapter(env: NodeJS.ProcessEnv = process.env): LLM
   return {
     provider: "anthropic",
     model,
-    async enviar(mensajes: Mensaje[], herramientas: Herramienta[], opciones = {}): Promise<RespuestaLLM> {
+    async enviar(mensajes: Mensaje[], herramientas: Herramienta[], opciones: OpcionesLLM): Promise<RespuestaLLM> {
       if (!apiKey) throw new Error("LLM no configurado: falta ANTHROPIC_API_KEY");
       const tools = Object.fromEntries(
         herramientas.map((h) => [
@@ -22,7 +22,7 @@ export function crearAnthropicAdapter(env: NodeJS.ProcessEnv = process.env): LLM
         system: opciones.system,
         messages: mensajes,
         tools,
-        stopWhen: stepCountIs(opciones.maxPasos ?? 25),
+        stopWhen: stepCountIs(opciones.maxPasos),
         timeout: { totalMs: 60_000 },
       });
       return { texto: r.text, pasos: r.steps.length, tokens: r.usage.totalTokens ?? 0 };

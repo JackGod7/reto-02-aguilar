@@ -20,9 +20,12 @@ function leerDentro(directory: string, ruta: string): string | null {
   }
 }
 
-/** Prompt del agente + conocimiento del proceso. Tolera que falte el conocimiento (o el prompt). */
+/** Prompt del agente + conocimiento del proceso. Tolera que falte el conocimiento; sin prompt lanza (fail fast). */
 export function buildSystemPrompt(directory: string): string {
-  const prompt = leerDentro(directory, RUTA_PROMPT) ?? "";
+  const prompt = leerDentro(directory, RUTA_PROMPT);
+  if (prompt === null || prompt.trim() === "") {
+    throw new Error(`System prompt ausente o vacío: se esperaba ${RUTA_PROMPT} en ${resolve(directory)}`);
+  }
   const conocimiento = leerDentro(directory, RUTA_CONOCIMIENTO);
   if (conocimiento === null || conocimiento.trim() === "") return prompt;
   return `${prompt.trimEnd()}\n\n## Conocimiento del proceso (fuente: ${RUTA_CONOCIMIENTO})\n\n${conocimiento.trim()}\n`;
