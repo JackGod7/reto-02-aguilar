@@ -1,4 +1,4 @@
-import { traceable } from "langsmith/traceable";
+import "./sin-trazas.ts"; // primero: fuerza tracing externo apagado
 import { ChatAnthropic } from "@langchain/anthropic";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
@@ -11,7 +11,7 @@ interface EsquemaHerramienta {
   schema: z.ZodType;
 }
 
-export interface ModeloAnthropicPaso {
+interface ModeloAnthropicPaso {
   bindTools(herramientas: EsquemaHerramienta[]): {
     invoke(mensajes: BaseMessage[], opciones: { signal: AbortSignal; callbacks: [] }): Promise<AIMessage>;
   };
@@ -68,13 +68,10 @@ export function crearAnthropicAdapter(
     const mensajesModelo = historial(mensajes, opciones.system);
     try {
       signal.throwIfAborted();
-      // Contexto local: ignora incluso tracing heredado del proceso o del llamador.
-      const respuesta = await traceable(async () => {
-        const modelo = crearModelo({ model, apiKey, maxTokens: Math.min(maxSalida, maxTokens), maxRetries: 0, clientOptions: { timeout: timeoutMs, maxRetries: 0 } });
-        return modelo.bindTools(herramientas.map((h) => ({
-          name: h.name, description: h.description, schema: h.inputSchema,
-        }))).invoke(mensajesModelo, { signal, callbacks: [] });
-      }, { name: "llm-paso", tracingEnabled: false })();
+      const modelo = crearModelo({ model, apiKey, maxTokens: Math.min(maxSalida, maxTokens), maxRetries: 0, clientOptions: { timeout: timeoutMs, maxRetries: 0 } });
+      const respuesta = await modelo.bindTools(herramientas.map((h) => ({
+        name: h.name, description: h.description, schema: h.inputSchema,
+      }))).invoke(mensajesModelo, { signal, callbacks: [] });
       const validas = respuesta.tool_calls ?? [];
       const invalidas = respuesta.invalid_tool_calls ?? [];
       const ids = new Set([...validas, ...invalidas].map((llamada) => llamada.id).filter(Boolean));
@@ -109,12 +106,5 @@ export function crearAnthropicAdapter(
     }
   }
 
-  return {
-    provider: "anthropic", model, generarPaso,
-    async enviar(mensajes, herramientas, opciones) {
-      if (!Number.isSafeInteger(opciones.maxPasos) || opciones.maxPasos <= 0) throw new Error("Tope de pasos LLM inválido");
-      const respuesta = await generarPaso(mensajes, herramientas, { system: opciones.system });
-      return { texto: respuesta.texto, pasos: 1, tokens: respuesta.tokens };
-    },
-  };
+  return { provider: "anthropic", model, configurado: Boolean(apiKey), generarPaso };
 }

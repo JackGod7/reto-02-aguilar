@@ -5,11 +5,11 @@ import { COLUMNAS } from "../domain/contrato.ts";
 import type { FilaMaestro } from "../domain/contrato.ts";
 import { dirs, FIXTURES } from "./rutas.ts";
 
-export function rutaMaestro(directory: string): string {
+function rutaMaestro(directory: string): string {
   return resolve(dirs(directory).sharepoint, "maestro-contratos.csv");
 }
 
-export function asegurarMaestro(directory: string): string {
+function asegurarMaestro(directory: string): string {
   const destino = rutaMaestro(directory);
   if (!existsSync(destino)) {
     mkdirSync(dirs(directory).sharepoint, { recursive: true });

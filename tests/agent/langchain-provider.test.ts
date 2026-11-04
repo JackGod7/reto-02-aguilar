@@ -29,11 +29,9 @@ function transporte(responder: (mensajes: BaseMessage[], signal: AbortSignal) =>
 
 test("LangChain: invoca una vez, conserva historial y solo declara herramientas", async () => {
   let invocaciones = 0;
-  let ejecuciones = 0;
   const schema = z.object({ mensaje_id: z.string().describe("Identificador de correo") }).strict();
   const herramienta: Herramienta = {
     name: "contratos_extraer", description: "Extraer contrato", inputSchema: schema,
-    async execute() { ejecuciones++; return "no debe ejecutarse"; },
   };
   const fake = transporte(async (mensajes) => {
     invocaciones++;
@@ -50,14 +48,13 @@ test("LangChain: invoca una vez, conserva historial y solo declara herramientas"
     });
   });
   const adapter = crearAnthropicAdapter(env, fake.crear);
-  const paso = await adapter.generarPaso!([
+  const paso = await adapter.generarPaso([
     { role: "user", content: "procesa" },
     { role: "assistant", content: "", toolCalls: [{ id: "anterior", name: "contratos_leer_buzon", args: {} }] },
     { role: "tool", content: '{"ok":true}', toolCallId: "anterior" },
   ], [herramienta], { system: "instrucciones", maxOutputTokens: 128 });
   assert.deepEqual(paso, { texto: "Consultaré el contrato.", llamadas: [{ id: "nueva", name: "contratos_extraer", args: { mensaje_id: "msg-006" } }], tokens: 20, usoConocido: true });
   assert.equal(invocaciones, 1);
-  assert.equal(ejecuciones, 0);
   assert.deepEqual(fake.esquemas, [{ name: herramienta.name, description: herramienta.description, schema }]);
   assert.equal(fake.configs[0]?.maxTokens, 128);
   assert.equal(fake.configs[0]?.maxRetries, 0);
@@ -71,14 +68,13 @@ test("LangChain: uso ausente no se presenta como medición conocida", async () =
   assert.deepEqual(paso, { texto: "Respuesta", llamadas: [], tokens: 0, usoConocido: false });
 });
 
-test("LangChain: env impone techo a maxOutputTokens y enviar es un único paso", async () => {
+test("LangChain: env impone techo a maxOutputTokens", async () => {
   let invocaciones = 0;
   const fake = transporte(async () => { invocaciones++; return new AIMessage("Hola"); });
   const adapter = crearAnthropicAdapter({ ...env, LLM_MAX_OUTPUT_TOKENS: "256" }, fake.crear);
-  await adapter.generarPaso!([], [], { maxOutputTokens: 900 });
+  await adapter.generarPaso([], [], { maxOutputTokens: 900 });
   assert.equal(fake.configs[0]?.maxTokens, 256);
-  assert.deepEqual(await adapter.enviar([], [], { maxPasos: 10 }), { texto: "Hola", pasos: 1, tokens: 0 });
-  assert.equal(invocaciones, 2);
+  assert.equal(invocaciones, 1);
 });
 
 test("LangChain: rechaza configuración y topes inválidos antes de invocar", async () => {
@@ -88,8 +84,7 @@ test("LangChain: rechaza configuración y topes inválidos antes de invocar", as
     assert.throws(() => crearAnthropicAdapter({ ...env, LLM_MAX_OUTPUT_TOKENS: valor }, fake.crear), /entero positivo/);
   }
   const adapter = crearAnthropicAdapter(env, fake.crear);
-  await assert.rejects(adapter.generarPaso!([], [], { maxOutputTokens: 0 }), /salida/);
-  await assert.rejects(adapter.enviar([], [], { maxPasos: 0 }), /pasos/);
+  await assert.rejects(adapter.generarPaso([], [], { maxOutputTokens: 0 }), /salida/);
   assert.equal(fake.configs.length, 0);
 });
 
@@ -144,7 +139,7 @@ test("LangChain: llamadas malformadas conservan intento y consumo sin argumentos
     });
   });
   const adapter = crearAnthropicAdapter(env, fake.crear);
-  const paso = await adapter.generarPaso!([], [], {});
+  const paso = await adapter.generarPaso([], [], {});
   assert.equal(paso.tokens, 13);
   assert.equal(paso.usoConocido, true);
   assert.deepEqual(paso.llamadas, [
@@ -153,12 +148,12 @@ test("LangChain: llamadas malformadas conservan intento y consumo sin argumentos
   ]);
   const schema = z.object({ mensaje_id: z.string() }).strict();
   for (const llamada of paso.llamadas) assert.equal(schema.safeParse(llamada.args).success, false);
-  const repetido = await adapter.generarPaso!([
+  const repetido = await adapter.generarPaso([
     { role: "assistant", content: "", toolCalls: [paso.llamadas[1]!] },
     { role: "tool", content: '{"ok":false,"error":"argumentos inválidos"}', toolCallId: "malformada" },
   ], [], {});
   assert.deepEqual(repetido, paso);
-  await assert.rejects(adapter.generarPaso!([{ role: "tool", content: "resultado" }], [], {}), /sin identificador/);
+  await assert.rejects(adapter.generarPaso([{ role: "tool", content: "resultado" }], [], {}), /sin identificador/);
 });
 
 
@@ -168,12 +163,10 @@ test("LangChain: tracing externo desactivado aunque el proceso lo herede habilit
     import { crearAnthropicAdapter } from "./src/llm/anthropic.ts";
     import { AIMessage } from "@langchain/core/messages";
     import { CallbackManager } from "@langchain/core/callbacks/manager";
-    import { getCurrentRunTree } from "langsmith/traceable";
     let red = 0;
     globalThis.fetch = async () => { red++; throw new Error("No se permite red"); };
     const adapter = crearAnthropicAdapter({ ANTHROPIC_API_KEY: "ficticia" }, () => ({
       bindTools() { return { async invoke() {
-        assert.equal(getCurrentRunTree().tracingEnabled, false);
         const manager = CallbackManager.configure([]);
         assert.equal(manager?.handlers.some(h => h.name === "langchain_tracer"), false);
         return new AIMessage("local");
@@ -193,7 +186,6 @@ test("LangChain: tracing externo desactivado aunque el proceso lo herede habilit
 
 test("LangChain: ChatAnthropic real serializa schemas e historial y deserializa tool_use sin red", async () => {
   const solicitudes: unknown[] = [];
-  let ejecuciones = 0;
   const fakeFetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     solicitudes.push(await request.json());
@@ -210,14 +202,13 @@ test("LangChain: ChatAnthropic real serializa schemas e historial y deserializa 
   const adapter = crearAnthropicAdapter(env, (config) => new ChatAnthropic({
     ...config, clientOptions: { ...config?.clientOptions, fetch: fakeFetch },
   }));
-  const paso = await adapter.generarPaso!([
+  const paso = await adapter.generarPaso([
     { role: "user", content: "procesa" },
     { role: "assistant", content: "Reviso el buzón.", toolCalls: [{ id: "tool_anterior", name: "contratos_leer_buzon", args: {} }] },
     { role: "tool", content: '{"ok":true}', toolCallId: "tool_anterior" },
   ], [{
     name: "contratos_extraer", description: "Extraer contrato",
     inputSchema: z.object({ mensaje_id: z.string().describe("Identificador de correo") }).strict(),
-    async execute() { ejecuciones++; return "no"; },
   }], { system: "instrucciones", maxOutputTokens: 128 });
   assert.equal(solicitudes.length, 1);
   const body = z.object({
@@ -240,5 +231,4 @@ test("LangChain: ChatAnthropic real serializa schemas e historial y deserializa 
   assert.deepEqual(body.tools[0]?.input_schema.required, ["mensaje_id"]);
   assert.equal(body.tools[0]?.input_schema.properties.mensaje_id.description, "Identificador de correo");
   assert.deepEqual(paso, { texto: "Consultaré el contrato.", llamadas: [{ id: "tool_prueba", name: "contratos_extraer", args: { mensaje_id: "msg-006" } }], tokens: 30, usoConocido: true });
-  assert.equal(ejecuciones, 0);
 });

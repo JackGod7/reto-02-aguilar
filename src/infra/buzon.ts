@@ -9,7 +9,7 @@ const correoSchema = z.object({
   adjuntos: z.array(z.string()).default([]),
 });
 
-export interface MensajeLeido {
+interface MensajeLeido {
   correo: Correo;
   adjuntoNombre: string | null;
   texto: string | null;

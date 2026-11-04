@@ -8,7 +8,7 @@ export function conContextoLog<T>(ctx: { sessionId: string; callId?: string }, f
   return contextoLog.run(ctx, fn);
 }
 
-export interface EntradaHistorial {
+interface EntradaHistorial {
   ts: string;
   id_contrato: string;
   accion: string;

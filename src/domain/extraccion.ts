@@ -4,7 +4,7 @@ import { extraerDinero } from "./dinero.ts";
 import type { Moneda } from "./dinero.ts";
 import { addMonths, esFechaIso, parseFechaEs, todasLasFechasEs } from "./fechas.ts";
 
-export const NIT_PERIFERIA = "900123456";
+const NIT_PERIFERIA = "900123456";
 
 export interface Correo {
   id: string;
@@ -38,7 +38,7 @@ const PAIS_POR_CIUDAD: Array<[RegExp, Contrato["pais"]]> = [
 ];
 const MONEDA_POR_PAIS: Record<string, Moneda> = { CO: "COP", EC: "USD", PE: "PEN", PA: "USD", HN: "USD" };
 
-export function tituloEs(nombre: string): string {
+function tituloEs(nombre: string): string {
   const minusculas = new Set(["de", "del", "la", "los", "las", "y", "e"]);
   return nombre
     .trim()

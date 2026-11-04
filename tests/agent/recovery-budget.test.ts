@@ -31,7 +31,7 @@ test("A6: sesión previa + requestId recuperan POST perdido sin repetir herramie
   const efecto = deferred(), acabar = deferred();
   let llamadas = 0, escrituras = 0;
   const e = await entorno(t, {
-    provider: "mock", model: "mock", async enviar() { throw new Error("legado"); },
+    provider: "mock", model: "mock",
     async generarPaso() {
       if (++llamadas === 1) return { ...paso(), llamadas: [{ id: "alta", name: "contratos_registrar", args: { mensaje_id: "msg-001", hoy: "2026-09-03" } }] };
       await acabar.promise; return paso("dato inventado 999");
@@ -63,7 +63,8 @@ test("A6: sesión previa + requestId recuperan POST perdido sin repetir herramie
   const estado = await (await fetch(`${e.base}/api/sessions/${sessionId}`)).json() as { messages: unknown[]; requests: Array<{ status: string }> };
   assert.equal(estado.messages.length, 2);
   assert.equal(estado.requests[0]?.status, "completed");
-  assert.ok(!JSON.stringify(estado.messages).includes("999"));
+  // Decisión de integración: el texto final del modelo se muestra; los hechos verificados van debajo, desde las tools.
+  assert.match(JSON.stringify(estado.messages.at(-1)), /dato inventado 999\\n\\nResultados de las herramientas\. Hecho: registrar \(nuevo CT-2026-015/);
   const conflicto = await e.post("/api/chat", { ...body, message: "otro" });
   assert.equal(conflicto.status, 409);
   const log = readFileSync(join(e.directory, "out/turnos.jsonl"), "utf8").trim().split("\n");
@@ -73,8 +74,8 @@ test("A6: sesión previa + requestId recuperan POST perdido sin repetir herramie
 test("A8: reserva previa impide que dos sesiones gasten el mismo saldo diario", async (t) => {
   const inicio = deferred(), terminar = deferred(); let llamadas = 0;
   const e = await entorno(t, {
-    provider: "mock", model: "mock", async enviar() { llamadas++; inicio.release(); await terminar.promise; return { texto: "ok", pasos: 1, tokens: 70 }; },
-  }, { maxDailyTokens: 100, maxSessionTokens: 100 });
+    provider: "mock", model: "mock", async generarPaso() { llamadas++; inicio.release(); await terminar.promise; return paso("ok", 70_000); },
+  }, { maxDailyTokens: 100_000, maxSessionTokens: 100_000 });
   const s1 = await e.sesion(), s2 = await e.sesion();
   const primera = e.post("/api/chat", { sessionId: s1, requestId: randomUUID(), message: "uno" });
   await inicio.promise;
@@ -88,7 +89,7 @@ test("A8: reserva previa impide que dos sesiones gasten el mismo saldo diario", 
 test("A8: uso desconocido retiene toda la reserva en sesión y servicio", async (t) => {
   let llamadas = 0;
   const e = await entorno(t, {
-    provider: "mock", model: "mock", async enviar() { throw new Error("legado"); },
+    provider: "mock", model: "mock",
     async generarPaso() { llamadas++; return { ...paso("", 0), usoConocido: false }; },
   }, { maxDailyTokens: 40_000, maxSessionTokens: 40_000 });
   const sessionId = await e.sesion();
@@ -104,19 +105,21 @@ test("A8: uso desconocido retiene toda la reserva en sesión y servicio", async 
   assert.equal(log.reservedTokens, 40_000);
 });
 
-test("A7/A10: sin tools no publica hechos inventados; versión y diagnóstico no contienen conversación", async (t) => {
+test("A7/A10: sin tools el texto del modelo queda marcado como no verificado; versión y diagnóstico no contienen conversación", async (t) => {
   const buildSha = "1234567890abcdef1234567890abcdef12345678";
   // Marcador improbable: "999" aparecía al azar en UUIDs/timestamps de la respuesta (falso positivo intermitente).
   const INVENTADO = "987654321987";
   const e = await entorno(t, {
-    provider: "mock", model: "mock", async enviar() { throw new Error("legado"); }, async generarPaso() { return paso(`El contrato registrado tiene valor ${INVENTADO}.`); },
+    provider: "mock", model: "mock", async generarPaso() { return paso(`El contrato registrado tiene valor ${INVENTADO}.`); },
   }, { buildSha });
   const health = await (await fetch(e.base + "/api/health")).json() as { buildSha: string };
   assert.equal(health.buildSha, buildSha);
   const sessionId = await e.sesion();
   const response = await e.post("/api/chat", { sessionId, requestId: randomUUID(), message: "contenido privado del contrato" });
   assert.equal(response.status, 200);
-  assert.ok(!JSON.stringify(await response.json()).includes(INVENTADO));
+  const cuerpo = await response.json() as { reply: string; toolCalls: unknown[] };
+  assert.deepEqual(cuerpo.toolCalls, []);
+  assert.match(cuerpo.reply, new RegExp(`${INVENTADO}\\.\\n\\nSin datos verificados: no se ejecutó ninguna herramienta`));
   const log = readFileSync(join(e.directory, "out/turnos.jsonl"), "utf8");
   assert.ok(!log.includes("contenido privado"));
   assert.ok(!log.includes(INVENTADO));
@@ -126,7 +129,7 @@ test("A7/A10: sin tools no publica hechos inventados; versión y diagnóstico no
 test("A8: entrada o presupuesto insuficientes detienen el modelo antes del transporte", async (t) => {
   let llamadas = 0;
   const e = await entorno(t, {
-    provider: "mock", model: "mock", async enviar() { throw new Error("legado"); }, async generarPaso() { llamadas++; return paso(); },
+    provider: "mock", model: "mock", async generarPaso() { llamadas++; return paso(); },
   }, { maxSessionTokens: 100 });
   const r = await e.post("/api/chat", { message: "hola" });
   assert.equal(r.status, 200);

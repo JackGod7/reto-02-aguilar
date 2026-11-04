@@ -21,7 +21,6 @@ function entorno(t: { after(fn: () => void): void }, respuestas: Array<PasoLLM |
   let llamadas = 0;
   const adapter: LLMAdapter = {
     provider: "falso-local", model: "falso-local",
-    async enviar() { throw new Error("El bucle antiguo no debe ejecutarse"); },
     async generarPaso(history) {
       histories.push(structuredClone(history));
       const res = respuestas[llamadas++] ?? paso();
@@ -52,7 +51,9 @@ test("LangGraph: pausa una cola serial y reanuda registro exacto antes del repor
   assert.deepEqual(segundo.toolCalls[0]?.args, { mensaje_id: "msg-006", hoy: "2026-09-03", confirmado: true, contrato: { valor: 0, fecha_fin: "2027-08-31" } });
   assert.match(readFileSync(join(e.directory, "out/alertas.md"), "utf8"), /CM-2026-03/);
   assert.equal(log(e.directory).filter((l) => l.herramienta === "registrar").length, 2, "sonda y aprobación, sin repetir la sonda al reanudar interrupt");
-  assert.ok(!segundo.reply.includes("999"));
+  // El texto final del modelo se muestra arriba; los hechos (valor 0 registrado) salen de las tools, debajo.
+  assert.ok(segundo.reply.startsWith("Registré valor 999\n\nResultados de las herramientas."), segundo.reply);
+  assert.match(segundo.reply, /registrar \(nuevo CM-2026-03/);
   assert.deepEqual(segundo.usage, { steps: 1, tokens: 7, known: true });
   const h = e.histories[1]!;
   for (let i = 0; i < h.length; i++) if (h[i]?.role === "tool") {
@@ -153,7 +154,9 @@ test("LangGraph: fallo de proveedor después de tool conserva evidencia y uso si
   try { await e.run("procesa"); } catch (error) { assert.ok(error instanceof ErrorTurnoGrafo); fallo = error; }
   assert.ok(fallo);
   assert.equal(fallo.partial.toolCalls[0]?.ok, true);
-  assert.deepEqual(fallo.partial.usage, { steps: 2, tokens: 11, known: false });
+  const { uncertain, ...uso } = fallo.partial.usage;
+  assert.deepEqual(uso, { steps: 2, tokens: 11, known: false });
+  assert.ok(typeof uncertain === "number" && uncertain > 0, "cota del intento fallido para el presupuesto");
   assert.equal(e.session.tokens, 11);
   assert.equal(e.session.messages.at(-1)?.toolCalls?.length, 1);
   assert.ok(!fallo.partial.reply.includes("detalle privado"));

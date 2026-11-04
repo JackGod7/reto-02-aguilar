@@ -1,7 +1,7 @@
 // CSV RFC 4180 con defensa contra inyección de fórmulas (prefijo ').
 const FORMULA = /^[=+\-@\t\r]/;
 
-export function escaparCelda(valor: string): string {
+function escaparCelda(valor: string): string {
   let s = valor;
   if (FORMULA.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) s = `"${s.replaceAll('"', '""')}"`;

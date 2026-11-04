@@ -52,7 +52,8 @@ test("LangGraph API: seis fixtures, pausa real, aprobación y reporte con provee
     assert.equal(segunda.status, 200);
     const r2 = await segunda.json() as RespuestaChat;
     assert.equal(r2.needsConfirmation, null);
-    assert.ok(!r2.reply.includes("999"), "la narración oficial tampoco afirma valores inventados");
+    assert.ok(r2.reply.startsWith("Registré el valor inventado 999\n\n"), "el texto final del modelo se muestra");
+    assert.match(r2.reply, /registrar \(nuevo CM-2026-03/, "los hechos visibles salen de las tools");
     assert.match(readFileSync(maestro, "utf8"), /CM-2026-03/);
     assert.match(readFileSync(join(s.directory, "out/alertas.md"), "utf8"), /CM-2026-03/);
     assert.ok(r2.toolCalls.some((c) => c.name === "contratos_alertas" && c.ok));

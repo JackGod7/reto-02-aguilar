@@ -8,7 +8,7 @@ export const COLUMNAS = [
 
 export type FilaMaestro = Record<(typeof COLUMNAS)[number], string>;
 
-export const contratoSchema = z.object({
+const contratoSchema = z.object({
   id_contrato: z.string(),
   cliente: z.string(),
   nit_cliente: z.string(),
@@ -49,12 +49,12 @@ export const overrideSchema = z
   })
   .partial()
   .strict();
-export type Override = z.infer<typeof overrideSchema>;
+type Override = z.infer<typeof overrideSchema>;
 
-export const CAMPOS_REVISION = [
+const CAMPOS_REVISION = [
   "id_contrato", "cliente", "nit_cliente", "pais", "objeto", "valor", "moneda", "fecha_inicio", "fecha_fin",
 ] as const;
-export const UMBRAL = 0.8;
+const UMBRAL = 0.8;
 
 export function filaAContrato(f: FilaMaestro): Contrato {
   const confianza: Record<string, number> = {};
