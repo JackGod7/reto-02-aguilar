@@ -8,7 +8,7 @@
 | M3 agente + server | Sonnet | ⏳ | | |
 | M4 front | Haiku | ⏳ | | |
 | M5 prompt + docs | Haiku | ⏳ | | |
-| M6 docker | Haiku | ⏳ | | |
+| M6 docker | Haiku | ✅ | | Dockerfile, .dockerignore, render.yaml escritos; `docker build` NO verificado (socket de Docker denegado en sandbox; `COPY agent/ web/ demo.ts` fallará hasta que M2/M4/M5 existan) |
 | M7 integración | Sonnet | ⏳ | | |
 | Deploy + link | tú | ⏳ | | |
 | ZIP + respuesta | tú | ⏳ | | |
