@@ -8,7 +8,7 @@
 | M3 agente + server | Sonnet | ✅ | 21:31 | node --test "tests/agent/*.test.ts" 7/7 (mock, sin red); typecheck OK |
 | M4 front | Haiku | ✅ | 21:31 | stub contrato §7: `<img onerror>` → texto (0 img); panel ámbar envía "confirmo …"; 401→clave; error claro; sin innerHTML |
 | M5 prompt + docs | Haiku | ✅ | 21:30 | agent/prompt.md, src/knowledge/registro-contratos.md, README.md, SOLUCION.md (11 secciones); `<COSTO>`, `<URL_PUBLICA>`, `<ACCESS_KEY>` pendientes para M7; cobertura marcada pendiente de verificar |
-| M6 docker | Haiku | ✅ | | Dockerfile, .dockerignore, render.yaml escritos; `docker build` NO verificado (socket de Docker denegado en sandbox; `COPY agent/ web/ demo.ts` fallará hasta que M2/M4/M5 existan) |
+| M6 docker | Haiku | ✅ | | docker build OK (node:24-slim, Node v24.22.2, TS nativo sin flags, usuario node); run: /api/health 200 |
 | M7 integración | Sonnet | ⏳ | | |
 | Deploy + link | tú | ⏳ | | |
 | ZIP + respuesta | tú | ⏳ | | |
