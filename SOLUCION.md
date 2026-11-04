@@ -2,7 +2,7 @@
 
 Estrategia de producto, roadmap, backlog y caso de negocio: [`docs/PRODUCTO.md`](docs/PRODUCTO.md). Decisiones de arquitectura: [`docs/adr/`](docs/adr/). Operación: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
-Estado al 2026-11-04: migración Node + LangGraph en integración, sin commit ni despliegue. A1 está integrada en e735094. A3 y la corrección A4-P0 tienen revisión independiente focal 36/36; A2 está implementada en revisión y las puertas conjuntas A5–A12 siguen pendientes. Las cifras y decisiones históricas se identifican como tales; este documento no acredita operación con datos reales.
+Versión actual: Node + LangGraph + LangChain (la primera entrega con Vercel AI SDK queda en el tag `entrega-2026-11-03`). Verificación: `npx tsc --noEmit` limpio, 139/139 tests con `node --test` y `node scripts/verificar-entrega.ts` en verde. Es una demo sobre fixtures; no está preparada para datos reales (ver §9).
 
 ## 1. Problema
 
@@ -12,10 +12,10 @@ El maestro de contratos vigentes está congelado desde el corte de 2026-05-30: l
 
 ```
 Navegador (web/)
-   │  POST /api/chat · POST /api/reset · GET /api/sessions/:id · GET /api/health
+   │  POST /api/sessions · POST /api/chat · GET /api/sessions/:id · POST /api/reset · GET /api/health
    ▼
 Servidor node:http (src/server.ts)
-   │  rate limit · ACCESS_KEY · tamaños · sesiones en memoria
+   │  rate limit · ACCESS_KEY · tamaños · sesiones y requestId en memoria · topes de tokens
    ▼
 Agente (src/agent/)  ── system prompt: agent/prompt.md
    │  LangGraph: modelo → herramienta → revisión → interrupt → Command
@@ -38,17 +38,17 @@ Dominio e infraestructura (src/domain/, src/infra/)
 
 El motor LangGraph controla nodos separados de modelo, herramienta, detección de revisión, espera humana y registro aprobado. El proveedor LangChain devuelve solicitudes y consumo por una sola llamada: no ejecuta herramientas. Un interrupt pausa la cola antes de la siguiente herramienta; la reanudación usa Command tras verificar la decisión humana contra la propuesta exacta. Una bandera confirmado generada por el modelo no autoriza el registro.
 
-El estado del grafo conserva cola, mensajes modelo/herramientas y revisión por sesión. Los checkpoints MemorySaver son adecuados para demostrar el reto en un proceso; no dan recuperación ante reinicios. La aprobación, persistencia durable, identidad, presupuestos concurrentes y restauración operativa se verifican por separado para el piloto. Los errores devuelven información parcial recuperable sin exponer detalles privados del proveedor.
+El estado del grafo conserva cola, mensajes modelo/herramientas y revisión por sesión. Los checkpoints MemorySaver bastan para la demo en un proceso; no sobreviven a reinicios. La decisión humana se acepta solo si el mensaje completo es `confirmo revisión <reviewId>`, `rechazo revisión <reviewId>` o el ejemplo textual del PRD para 006; añadir condiciones o excepciones («pero espera», «excepto el valor») exige aclaración (`tests/agent/hitl-adversarial.test.ts`). Si el proveedor falla, la respuesta 502 incluye las llamadas, la revisión y el uso conocidos; el cliente reintenta con el mismo `requestId` sin repetir efectos (`tests/agent/recovery-*.test.ts`).
 
-MAX_STEPS, MAX_TOOL_CALLS, LLM_TIMEOUT_MS, LLM_MAX_OUTPUT_TOKENS y MAX_SESSION_TOKENS limitan la ejecución. Las trazas externas LangSmith están deshabilitadas por invocación. Véase ADR-004 para motivación, alternativas y pruebas de aceptación.
+MAX_STEPS (llamadas al modelo, 25), MAX_TOOL_CALLS (100), LLM_TIMEOUT_MS (60 s), LLM_MAX_OUTPUT_TOKENS (4096), MAX_SESSION_TOKENS (200.000) y MAX_DAILY_TOKENS (2.000.000) limitan la ejecución; el servidor reserva presupuesto antes de cada turno y trata el uso desconocido como consumido. Las trazas LangSmith están deshabilitadas por invocación. Motivación y alternativas: ADR-004.
 
 ## 4. Elección del modelo
 
-El coste actual por caso todavía no está acreditado. La referencia histórica siguiente pertenece a la versión AI SDK; no es una estimación válida de LangGraph ni permite inferir coste por operación.
+El coste por caso de la versión LangGraph no se ha medido todavía; la única cifra disponible es de la primera entrega.
 
-- **Proveedor y modelo**: Anthropic, `claude-haiku-5-5` como default del código, configurable con `LLM_MODEL`. Se conserva la elección inicial para comparar calidad y consumo con una base conocida; no se ha demostrado que sea el modelo óptimo. La configuración efectiva se contrasta en health para el SHA desplegado.
-- **Referencia histórica**: las notas de una corrida AI SDK del 2026-11-03 registran 53.358 tokens por lote (39.041 + 14.317; seis correos y confirmación). Sin desglose entrada/salida/caché, repetición comparable ni precio vigente aplicado, no se calcula USD ni un promedio por correo.
-- **Medición pendiente**: registrar SHA, modelo efectivo, mensajes, altas/actualizaciones completadas, reintentos, fallos, uso de entrada/salida/caché y latencia. Aplicar tarifas verificadas y fechadas; incluir alojamiento, almacenamiento y operación para el coste completo. Coste por correo = gasto variable del periodo / correos recibidos; coste por operación = gasto variable / altas y actualizaciones completadas. Denominador cero se informa como no calculable. Una comparación manual/asistida mide minutos humanos por casos equivalentes; la latencia del modelo no demuestra ahorro de trabajo.
+- **Proveedor y modelo**: Anthropic, `claude-haiku-5-5` por defecto, configurable con `LLM_MODEL`. El modelo solo conduce la conversación y elige herramientas (los valores salen de código), así que un modelo pequeño y barato basta; no se ha comparado con otros. `/api/health` muestra el modelo efectivo.
+- **Referencia (versión AI SDK, 2026-11-03)**: 53.358 tokens por lote completo (39.041 + 14.317; seis correos y confirmación). Sin desglose entrada/salida/caché no se convierte a USD.
+- **Cómo medirlo**: cada turno escribe en `out/turnos.jsonl` SHA, modelo, latencia, pasos y tokens (sin contenido). Coste por correo = gasto del periodo / correos recibidos; coste por operación = gasto / altas y actualizaciones completadas.
 - **Dependencias** (exactas): `@langchain/langgraph` (estado y orquestación), `@langchain/core` (mensajes y contratos), `@langchain/anthropic` (proveedor), `langsmith` (control explícito de trazas; envío desactivado), `zod` (validación de argumentos de herramientas), `typescript` y `@types/node` (solo typecheck). Nada más.
 - **Prompt caching**: no implementado (sin `cache_control` en `src/`). Se evaluaría sobre el system prompt si el costo medido lo justifica.
 
@@ -64,7 +64,7 @@ El coste actual por caso todavía no está acreditado. La referencia histórica 
 
 ## 6. Regla de gobierno
 
-Propuesta de una página para validar con la organización en B0; los plazos no son acuerdos ni mediciones. En A no se conectan buzones reales, envían acuses ni ejecuta la campaña:
+Propuesta de una página para validar con la organización (roadmap §9, paso 1); los plazos son propuestas, no mediciones. En A no se conectan buzones reales, envían acuses ni ejecuta la campaña:
 
 1. **Canal y responsabilidad**: buzón propuesto `contratos@periferia.example`, dirección ficticia que sustituirá la organización. La analista administrativa administra el buzón y es dueña propuesta del maestro; se designa un suplente con acceso y procedimiento de relevo probado. TI mantiene permisos e integración y gerencia responde por cumplimiento y escalamiento. Los comerciales remiten documentos sin necesitar acceso al chat.
 2. **Envío completo**: cada comercial envía contratos con y sin póliza, PDF firmado con texto, otrosíes y actas de terminación dentro de un plazo propuesto de 3 días hábiles desde la firma. Asunto: `[CONTRATO|OTROSÍ|TERMINACIÓN] <cliente> - <id>`; indicar NIT/RUC, responsable y contrato relacionado. Si falta id o texto legible, declararlo para revisión sin inventar datos. Conservar original y sus documentos posteriores.
@@ -79,7 +79,7 @@ Propuesta de una página para validar con la organización en B0; los plazos no 
 |---|---|---|---|
 | Patrón del agente | Un agente con ciclo acotado y transiciones explícitas LangGraph | Plan-and-Execute | La siguiente acción depende del resultado de `validar`; el grafo puede suspender antes del siguiente efecto para obtener la decisión humana. |
 | Qué recibe la herramienta | `mensaje_id`; la herramienta relee el dato del fixture | Pasar el objeto contrato completo desde el modelo | Impide que el modelo invente o redondee un valor. El costo es que el modelo solo opera sobre mensajes existentes. |
-| Quién autoriza el registro | Backend: revisión expuesta, operación y valores exactos, huella de fuente/maestro y decisión completa de la persona | Flag `confirmado` decidido por el modelo | El identificador correcto no autoriza texto condicionado o exceptivo. Regresiones del grafo real y revisión independiente focal comprueban la corrección local; el cierre publicado exige las puertas conjuntas. |
+| Quién autoriza el registro | Backend: revisión expuesta, operación y valores exactos, huella de fuente/maestro y decisión completa de la persona | Flag `confirmado` decidido por el modelo | El identificador correcto no autoriza texto condicionado o exceptivo; si cambian la fuente o el maestro la aprobación caduca. Probado con el grafo real y proveedor simulado (`tests/agent/hitl-adversarial.test.ts`, `tests/core/gate-adversarial.test.ts`). |
 | Código interno en español | Nombres de dominio del PRD (lenguaje ubicuo) | Código en inglés | Coincide con el PRD y los fixtures. Inglés queda como roadmap. |
 | Extracción de valores | Regex por cláusula | Extracción completa con LLM | Los valores son el dato crítico. Regex es auditable y reproducible; el LLM queda para explicar y conversar. |
 | Framework | LangGraph + LangChain + zod | Mantener el bucle propio sobre AI SDK | La pausa y reanudación requieren estado explícito. Se acepta la dependencia para aprovechar checkpoints e interrupts; la autorización e integridad siguen siendo reglas propias. ADR-004. |
@@ -94,28 +94,39 @@ Propuesta de una página para validar con la organización en B0; los plazos no 
 - Un otrosí que amplía la póliza deja `estado_poliza = pendiente`.
 - Los vencidos van en una sección aparte del reporte de alertas.
 - La deduplicación usa NIT + objeto, no solo NIT.
-- A2 interpreta RN1 con prioridad para id/valor/fechas iguales; metadatos solos no actualizan. Un otrosí sin cambios efectivos se trata como duplicado. NIT+objeto≥0.9 con otro id requiere decidir explícitamente el destino; una discrepancia de moneda requiere revisar la decisión de conservar la del maestro. Son interpretaciones conservadoras de la ambigüedad RN1/RN2, pendientes de aceptación conjunta.
+- RN1 tiene prioridad cuando id, valor y fechas coinciden; metadatos solos no actualizan. Un otrosí sin cambios efectivos se trata como duplicado. NIT+objeto≥0.9 con otro id pide decidir explícitamente el destino; una moneda distinta se muestra para revisión en vez de descartarse. Son interpretaciones conservadoras de la ambigüedad RN1/RN2 (`tests/core/clasificacion*.test.ts`).
 - Sin id se propone `AUTO-<año>-<secuencia>` para aprobación explícita. La generación depende del maestro; las colisiones se bloquean para corregir identidad. No es una identidad durable de documentos ni una garantía de idempotencia ante reinicios.
 - A usa `contrato.txt`/`otrosi.txt` y copia el adjunto disponible; no lee PDF binario. El PDF con texto y procedencia se incorpora en B; escaneados/ilegibles se derivan a atención manual. OCR queda diferido.
 
 ## 9. Cobertura
 
-La cobertura de la versión publicada sigue pendiente de revalidación. A1 se verificó en e735094; los cambios locales, las pruebas focales y los resultados de un autor no cierran A12. El bonus `modulo/` reexporta las mismas tools y se genera desde prompt/conocimiento; su paquete final debe verificarse e incluir `src/`, pues no es una carpeta autosuficiente. `contratos_leer_pdf` (P1) no está implementada.
+Los seis fixtures del PRD producen el resultado esperado de `plan/SPEC.md` §4, tanto por el chat (proveedor simulado) como en `node demo.ts`. El bonus `modulo/` reexporta las mismas tools y se genera desde prompt y conocimiento (`npm run build:modulo`); depende de `src/`, no es una carpeta autosuficiente. `contratos_leer_pdf` (P1) no está implementada.
 
-| HU | Historia | Estado | Qué falta para producción |
-|---|---|---|---|
-| HU-1 | Leer el buzón | Parcial: tools de fixtures; flujo y despliegue final por verificar | Ingesta real autorizada y originales durables |
-| HU-2 | Extraer datos con confianza | Parcial: A1 integrada y probada; nueva versión publicada por verificar | PDF nativo con procedencia y corpus representativo; atención manual a ilegibles |
-| HU-3 | Validar y clasificar | Parcial: A2 implementada, con revisión independiente y aceptación conjunta pendientes | Identidad contractual, conciliación y evals de falsos limpios |
-| HU-4 | Registrar y archivar | Parcial: gate local corregido y revisión focal; registro/archivo e integración por cerrar | Autoridad del maestro, identidad, transacciones, recuperación y efectos remotos reconciliables |
-| HU-5 | Alertar | Parcial: reporte de fixtures; verificar reporte final tras confirmar 006 | Responsables, evidencia y seguimiento de alertas; fechas de póliza si se requieren |
-| HU-6 | Manejo de errores | Parcial: regresiones de herramientas/proveedor simulado; integración y prueba real pendientes | Monitoreo, límites durables, recuperación probada y soporte operativo |
+| HU | Historia | Estado | Evidencia | Qué falta para producción |
+|---|---|---|---|---|
+| HU-1 | Leer el buzón | Cumple (fixtures) | `tests/core/tools.test.ts` | Ingesta real autorizada y originales durables |
+| HU-2 | Extraer datos con confianza | Cumple (fixtures) | `tests/core/extraccion-prd.test.ts`, `dominio.test.ts` | PDF con procedencia, corpus representativo, cola manual para ilegibles |
+| HU-3 | Validar y clasificar | Cumple (fixtures) | `tests/core/clasificacion*.test.ts` | Identidad contractual, conciliación y evals de falsos limpios |
+| HU-4 | Registrar y archivar | Cumple (fixtures) | `tests/core/gate-adversarial.test.ts`, `tests/agent/hitl-adversarial.test.ts`, `confirmacion.test.ts` | Transacción conjunta, identidad de quien aprueba, recuperación |
+| HU-5 | Alertar | Cumple (fixtures) | `tests/core/tools.test.ts`, `tests/agent/integracion.test.ts` | Responsable y seguimiento por alerta; fechas de póliza si se requieren |
+| HU-6 | Manejo de errores | Cumple (proveedor simulado) | `tests/agent/recovery-*.test.ts`, `server-hardening.test.ts`, `tope.test.ts` | Monitoreo, límites durables y soporte operativo |
+
+### Roadmap: piloto con datos reales (etapa B)
+
+La demo no se usa con datos reales hasta cumplir, en este orden, y con prueba de cada punto:
+
+1. **Acuerdo operativo**: dueña del maestro y suplente, autoridad (Excel o BD), volumen, presupuesto, retención y objetivos de recuperación validados con la organización (§6).
+2. **Persistencia e identidad**: checkpointer durable de LangGraph, sesiones y revisiones en BD; login corporativo y permisos por rol (analista aprueba, gerencia lee).
+3. **Integridad**: contrato, historial, aprobación y archivo en una transacción con clave de idempotencia; exportación a SharePoint por outbox reconciliable.
+4. **Ingesta**: buzón real vía Graph y PDF con texto y procedencia por campo; escaneados a cola manual.
+5. **Operación**: límites de gasto persistentes, logs estructurados y alertas; backup restaurado en un ensayo y reversión de despliegue probada.
+6. **Evaluación**: modo shadow sobre corpus autorizado comparado con el registro humano (precisión por campo, falsos limpios, minutos humanos y coste por operación) antes de habilitar escrituras asistidas.
 
 ## 10. Uso de IA
 
 **Asistentes usados para construir**: Claude Code (modelos Haiku, Sonnet y Opus, según la tarea) para el scaffold, el núcleo de dominio, el agente, la interfaz, la documentación y la revisión final. Gemini se usó para una primera propuesta de arquitectura.
 
-Codex interviene en la migración LangGraph, reglas de clasificación, pruebas adversariales y sincronización documental. La tabla siguiente conserva decisiones de la primera entrega AI SDK; sus firmas no describen el adaptador LangChain actual.
+Codex (OpenAI) hizo la migración a LangGraph + LangChain, las reglas de clasificación conservadoras y las pruebas adversariales; Claude Code revisó y sincronizó la documentación. La tabla siguiente corresponde a la primera entrega (AI SDK): las firmas `stopWhen`/`inputSchema` ya no aplican al adaptador LangChain actual, pero las decisiones de fondo se mantienen.
 
 **Lo que se descartó de Gemini y por qué**:
 
@@ -132,7 +143,7 @@ Codex interviene en la migración LangGraph, reglas de clasificación, pruebas a
 | Trade-offs en "sección 6" | El PRD los pone en la sección 7 | Numeración del PRD |
 | `modulo/` como copia del código | El PRD pide no tener copias divergentes | Generado desde las mismas fuentes con `npm run build:modulo` (bonus hecho) |
 
-**Verificación**: contratos y firmas se contrastan con las versiones exactas instaladas y pruebas; para la migración se verifica LangChain/LangGraph. La revisión independiente intenta refutar el contenido exacto antes de integrar.
+**Verificación**: las firmas se contrastan con las versiones exactas instaladas (`package.json`) y con pruebas; cada cambio lo revisa otro agente que intenta romperlo (bypass del gate, valores inventados, regresiones del PRD).
 
 ### Referentes
 
@@ -140,7 +151,7 @@ Sin citas textuales ni URLs.
 
 | Referente | Dónde se ve en el repo |
 |---|---|
-| Curso DevTalles agentic-patterns. Labs usados: tool use, ReAct, chaining/gates, HITL. Descartados: plan-and-execute, CodeAct, orchestrator/parallel | Tool use en `src/tools/contratos.ts`; ReAct acotado en `src/agent/run.ts`; gate y HITL por código (§3, §7) |
+| Curso DevTalles agentic-patterns. Labs usados: tool use, ReAct, chaining/gates, HITL. Descartados: plan-and-execute, CodeAct, orchestrator/parallel | Tool use en `src/tools/contratos.ts`; ReAct acotado en `src/agent/graph.ts`; gate y HITL por código (§3, §7) |
 | Anthropic, "Building effective agents" (2024) | Agente simple con herramientas y gate antes que framework multiagente (§7) |
 | Yao et al., "ReAct" (2022) | Bucle observar/actuar con tope de 25 pasos (§3) |
 | OWASP Top 10 for LLM Applications | Prompt injection tratada como dato, sin herramientas de borrado ni shell, topes de costo (§11) |
@@ -162,5 +173,5 @@ Sin citas textuales ni URLs.
 | El modelo redondea un valor o infiere una fecha | El valor registrado sale de la herramienta; el modelo solo propone y la persona confirma. |
 | Pregunta abierta: dueño del maestro sin área legal | Queda fijado en la regla de gobierno (§6): la analista administrativa. |
 | Datos personales en correos y contratos | Minimizar lo que se guarda en logs; definir retención. |
-| Coste del modelo | Medición pendiente para LangGraph y modelo efectivo; no convertir la referencia histórica de tokens en USD actuales ni en ROI. |
+| Coste del modelo | Topes por turno, sesión y día; medir con `out/turnos.jsonl` antes de estimar coste por operación. |
 | Rotación de claves | Clave en variable de entorno del proveedor de hosting; rotación periódica. |

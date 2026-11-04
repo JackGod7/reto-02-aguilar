@@ -8,7 +8,7 @@ Agente conversacional que lee el buzón de contratos, extrae los datos, valida c
 - Salud del servicio: [GET /api/health](https://reto-02-aguilar.onrender.com/api/health).
 - Clave de acceso de la demo (PRD §6.1): `ia-generativa-reto-2026.=.`. La pantalla la pide la primera vez. Es una clave de acceso al ejemplo público; la clave del proveedor permanece en el backend.
 
-La migración local a LangGraph sigue en integración, sin commit ni despliegue. La revisión focal independiente de A3/A4-P0 pasó 36/36; A2 y las puertas conjuntas siguen en revisión. No atribuir a la URL el código de este checkout hasta contrastar el SHA desplegado y una conversación. Configuración Render comprobada por MCP: servicio `srv-dbla0hqjnfac73fblb6g`, plan Free, rama `main`, despliegue automático. El coste actual en USD y el arranque en máquina limpia aún requieren medición.
+Despliegue: Render Free, rama `main`, despliegue automático. `GET /api/health` devuelve el `buildSha` desplegado para contrastarlo con el commit. El servicio se duerme por inactividad: la primera petición puede tardar.
 
 ## Requisitos
 
@@ -52,21 +52,20 @@ node demo.ts
 
 Limpia `out/` y procesa los 6 mensajes llamando a las herramientas directamente, sin modelo ni clave. Muestra una primera pasada que deja 006 pendiente y una segunda llamada con `confirmado:true` como simulación explícita de la decisión humana. Ejecutarla solo sobre datos de demo que se puedan borrar.
 
-Pruebas (el resultado vigente se registra en `plan/CONTINUAR.md` local):
+Pruebas (139 tests con `node --test`, sin clave ni red):
 
 ```bash
 npm test
 npm run typecheck
 npm run build:modulo   # regenera modulo/ (bonus) desde agent/prompt.md y src/knowledge/
+node scripts/verificar-entrega.ts   # copia limpia: npm ci, arranque, tsc, suite, módulo y demo ×2
 ```
 
 ## Dónde vive el ciclo
 
 `src/agent/run.ts` dirige el proveedor del servidor a `src/agent/graph.ts`. LangGraph controla los nodos modelo, herramienta, revisión, interrupt y reanudación con Command. LangChain ChatAnthropic realiza una sola invocación por paso y nunca ejecuta herramientas. El backend verifica la aprobación contra el snapshot mostrado. ADR vigente: [ADR-004](docs/adr/004-langgraph-orquestacion.md).
 
-Los checkpoints de esta entrega usan MemorySaver: conservan la pausa dentro del proceso y se pierden al reiniciarlo. El piloto requiere checkpointer durable, identidad y recuperación probados. LangSmith externo está desactivado explícitamente; disponer del SDK no implica estar enviando trazas.
-
-La URL pública puede seguir ejecutando la versión anterior hasta verificar y publicar la migración; health por sí solo no acredita qué motor está desplegado.
+Los checkpoints usan MemorySaver: conservan la pausa dentro del proceso y se pierden al reiniciarlo (suficiente para la demo; ver roadmap en [SOLUCION §9](SOLUCION.md#9-cobertura)). LangSmith está desactivado en código; no se envían trazas externas.
 
 Sin streaming: la respuesta llega completa; el indicador 'pensando…' cubre la espera.
 
@@ -106,10 +105,10 @@ esté limpio, muéstrame lo que requiere revisión campo por campo y termina
 con el reporte de alertas. No registres nada dudoso sin preguntarme.
 ```
 
-Cuando se muestre la revisión única de 006, responde `confirmo el valor 0 y la fecha fin 2027-08-31`. La aceptación exige registrar exactamente esos valores y completar el reporte. El resultado del despliegue actual debe verificarse durante la entrega.
+Cuando se muestre la revisión única de 006, responde `confirmo el valor 0 y la fecha fin 2027-08-31`. El agente registra exactamente esos valores y termina con el reporte de alertas.
 
-Demo sin modelo tras instalar: `node demo.ts`. El runtime autorizado es Node con TypeScript nativo.
+Demo sin modelo tras instalar: `node demo.ts`.
 
-## Flujo de trabajo
+## Versiones
 
-Trabajo de integración en `codex/langgraph-reto`; solo el coordinador integra y publica tras revisión independiente, typecheck, suite completa, demo dos veces e inspección de fixtures/secretos. Un push a `main` despliega automáticamente en el servicio verificado. La versión entregada sigue congelada en el tag `entrega-2026-11-03`; `release/ai-sdk-referencia` conserva e735094. El piloto B exige identidad, persistencia durable, integridad y recuperación probadas antes de admitir datos reales.
+La primera entrega (Vercel AI SDK) está congelada en el tag `entrega-2026-11-03`. La versión actual migra el ciclo a LangGraph + LangChain ([ADR-004](docs/adr/004-langgraph-orquestacion.md)). Un push a `main` despliega en Render.

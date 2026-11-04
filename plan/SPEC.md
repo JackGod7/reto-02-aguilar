@@ -1,4 +1,4 @@
-# SPEC operativa (destilada de PRD + TRASPASO; verificada contra los fixtures)
+# SPEC operativa (destilada del PRD; verificada contra los fixtures)
 
 Hoy de referencia en demo/tests: `hoy = 2026-09-03` (la fecha real del sistema NO se usa para datos).
 
@@ -44,17 +44,18 @@ Alertas con hoy=2026-09-03 → `out/alertas.md`: (1) vencen ≤60 d: CT-2026-009
 
 ## 6. Agente — decisión vigente ADR-004
 
-Node + LangGraph controla nodos modelo, herramienta, detección de revisión, interrupt, decisión y registro aprobado. LangChain ChatAnthropic devuelve un paso con texto, llamadas y uso conocido/desconocido, sin ejecutar herramientas. La UI presenta revisión y valores del backend; Command solo reanuda tras validar la decisión completa contra el snapshot y las huellas de fuente/maestro. A4-P0 sigue abierto: una regex afirmativa o un ID válido no bastan para autorizar texto ambiguo, exceptivo o con instrucciones adicionales.
+Node + LangGraph controla nodos modelo, herramienta, detección de revisión, interrupt, decisión y registro aprobado. LangChain ChatAnthropic devuelve un paso con texto, llamadas y uso conocido/desconocido, sin ejecutar herramientas. La UI presenta revisión y valores del backend; Command solo reanuda tras validar la decisión completa contra el snapshot y las huellas de fuente/maestro. Una regex afirmativa o un ID válido no bastan para autorizar texto ambiguo, exceptivo o con instrucciones adicionales: la gramática consume el mensaje completo.
 
 MAX_STEPS cuenta llamadas al modelo; MAX_TOOL_CALLS limita herramientas; LLM_TIMEOUT_MS y LLM_MAX_OUTPUT_TOKENS acotan tiempo/salida; MAX_SESSION_TOKENS limita sesión. Fallos conservan resultados parciales y diferencian consumo desconocido. LangSmith externo permanece desactivado.
 
-MemorySaver es solo para continuidad en proceso en A. B requiere checkpointer durable, identidad, transacciones/idempotencia, recuperación, restauración y reversión comprobadas. Rapidez y ahorro son hipótesis por medir. El plan vigente es [PLAN-ATOMICO.md](/Users/jackaguilar/reto-periferia-ia-integracion/plan/PLAN-ATOMICO.md); la decisión anterior de delegar el bucle al AI SDK y aceptar confirmaciones por regex queda sustituida.
+MemorySaver es solo para continuidad en proceso en A. B requiere checkpointer durable, identidad, transacciones/idempotencia, recuperación, restauración y reversión comprobadas. Rapidez y ahorro son hipótesis por medir. La decisión anterior de delegar el bucle al AI SDK y aceptar confirmaciones por regex queda sustituida (ADR-004).
 
 ## 7. API (contrato fijo para front y server)
-- `POST /api/chat` `{sessionId?, message}` → `{sessionId, reply, toolCalls:[{id,name,args,ok,resumen}], needsConfirmation: null | {mensaje_id, campos:[{campo,valor_propuesto,confianza,motivo}], pregunta, reviewId?, operationHash?}, usage:{steps,tokens,known?}}`. Error: `{error:{code,message}}`; en fallo parcial del grafo se incluyen sessionId, reply, toolCalls, needsConfirmation y usage recuperables. Obtener la sesión antes del primer efecto y deduplicar requestId siguen siendo pendientes de A6.
-- `GET /api/sessions/:id` → `{sessionId, messages:[{role,text,toolCalls?,ts}], pending: needsConfirmation|null}` (404 si no existe; sessionId = UUID emitido por el servidor).
-- `GET /api/health` → `{ok:true, provider, model}`. Estáticos de `web/`.
+- `POST /api/sessions` → `201 {sessionId}`; el cliente crea la sesión antes del primer envío.
+- `POST /api/chat` `{sessionId?, message, requestId?}` (`requestId` UUID, exige `sessionId`; mismo id + mismo mensaje devuelve la respuesta guardada, otro mensaje → 409) → `{sessionId, reply, toolCalls:[{id,name,args,ok,resumen}], needsConfirmation: null | {mensaje_id, campos:[{campo,valor_propuesto,confianza,motivo}], pregunta, reviewId?, operationHash?}, usage:{steps,tokens,known?}}`. Error: `{error:{code,message}}`; en fallo parcial del grafo se incluyen sessionId, reply, toolCalls, needsConfirmation y usage recuperables.
+- `GET /api/sessions/:id` → `{sessionId, messages:[{role,text,toolCalls?,ts}], pending: needsConfirmation|null, requests:[{requestId,status}]}` (404 si no existe; sessionId = UUID emitido por el servidor).
+- `GET /api/health` → `{ok:true, provider, model, buildSha, persistence:"process", tracing:false}` (sin clave de acceso). Estáticos de `web/`.
 - Front: `textContent` siempre (nunca innerHTML con datos), muestra cada tool call (nombre, args, resumen), panel ámbar cuando `needsConfirmation` con botones Aprobar/Rechazar que envían "confirmo …"/"rechazo …" por `/api/chat`.
 
 ## 8. Entregables mínimos (orden de prioridad)
-1) repo con `node demo.ts` verde sin clave 2) chat funcionando 3) link público (`/api/health`) 4) README + SOLUCION.md (11 secciones del PRD §9.1; ver `plan/fuentes/TRASPASO.md` §14 para contenido: gobierno §14.6, supuestos, trade-offs) 5) bonus `modulo/` solo si sobra. Supuestos a declarar: la "rúbrica de la sección 10" no existe; `hoy` como argumento; firma msg-006 = fecha del correo; otrosí→póliza pendiente; vencidos en sección aparte; dedupe por NIT+objeto. Uso de IA a declarar: Claude Code (Haiku/Sonnet/Opus) y Gemini (su scaffold se descartó: `maxSteps`, `parameters`, flag `confirmado` del modelo, `z.any()`, historial en ruta equivocada).
+1) repo con `node demo.ts` verde sin clave 2) chat funcionando 3) link público (`/api/health`) 4) README + SOLUCION.md (11 secciones del PRD §9.1: gobierno, supuestos, trade-offs) 5) bonus `modulo/` solo si sobra. Supuestos a declarar: la "rúbrica de la sección 10" no existe; `hoy` como argumento; firma msg-006 = fecha del correo; otrosí→póliza pendiente; vencidos en sección aparte; dedupe por NIT+objeto. Uso de IA a declarar: Claude Code (Haiku/Sonnet/Opus), Codex (migración LangGraph) y Gemini (su scaffold se descartó: `maxSteps`, `parameters`, flag `confirmado` del modelo, `z.any()`, historial en ruta equivocada).
