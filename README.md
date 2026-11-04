@@ -44,7 +44,7 @@ node demo.ts
 
 Procesa los 6 mensajes del buzón llamando a las herramientas directamente, sin modelo ni clave. Deja la salida en `out/` y muestra una tabla por mensaje. El mensaje 006 queda sin registrar hasta una segunda pasada con confirmación.
 
-Pruebas (38/38 el 2026-11-03):
+Pruebas (47/47 el 2026-11-03):
 
 ```bash
 npm test

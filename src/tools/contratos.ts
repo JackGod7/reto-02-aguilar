@@ -183,7 +183,7 @@ export const registrar: ToolDef<typeof ARGS_REGISTRAR> = {
   description: "Registra el contrato del mensaje en el maestro y archiva su adjunto, o devuelve los campos en revisión si falta la confirmación explícita de la persona (confirmado:true).",
   args: ARGS_REGISTRAR,
   async execute(args, ctx) {
-    const mid = typeof (args as { mensaje_id?: unknown }).mensaje_id === "string" ? (args as { mensaje_id: string }).mensaje_id : null;
+    const mid = typeof (args as { mensaje_id?: unknown } | null)?.mensaje_id === "string" ? (args as { mensaje_id: string }).mensaje_id : null;
     return envolver("registrar", ctx, mid, () => registrarSync(args, ctx));
   },
 };
