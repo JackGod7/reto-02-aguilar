@@ -2,7 +2,7 @@
 
 Estrategia de producto, roadmap, backlog y caso de negocio: [`docs/PRODUCTO.md`](docs/PRODUCTO.md). Decisiones de arquitectura: [`docs/adr/`](docs/adr/). Operación: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
-Versión actual: Node + LangGraph + LangChain (la primera entrega con Vercel AI SDK queda en el tag `entrega-2026-11-03`). Verificación: `npx tsc --noEmit` limpio, 139/139 tests con `node --test` y `node scripts/verificar-entrega.ts` en verde. Es una demo sobre fixtures; no está preparada para datos reales (ver §9).
+Versión actual: Node + LangGraph + LangChain (la primera entrega con Vercel AI SDK queda en el tag `entrega-2026-11-03`). Verificación: `npx tsc --noEmit` limpio, suite completa de `node --test` en verde y `node scripts/verificar-entrega.ts` en verde. Es una demo sobre fixtures; no está preparada para datos reales (ver §9).
 
 ## 1. Problema
 
@@ -38,7 +38,7 @@ Dominio e infraestructura (src/domain/, src/infra/)
 
 El motor LangGraph controla nodos separados de modelo, herramienta, detección de revisión, espera humana y registro aprobado. El proveedor LangChain devuelve solicitudes y consumo por una sola llamada: no ejecuta herramientas. Un interrupt pausa la cola antes de la siguiente herramienta; la reanudación usa Command tras verificar la decisión humana contra la propuesta exacta. Una bandera confirmado generada por el modelo no autoriza el registro.
 
-El estado del grafo conserva cola, mensajes modelo/herramientas y revisión por sesión. Los checkpoints MemorySaver bastan para la demo en un proceso; no sobreviven a reinicios. La decisión humana se acepta solo si el mensaje completo es `confirmo revisión <reviewId>`, `rechazo revisión <reviewId>` o el ejemplo textual del PRD para 006; añadir condiciones o excepciones («pero espera», «excepto el valor») exige aclaración (`tests/agent/hitl-adversarial.test.ts`). Si el proveedor falla, la respuesta 502 incluye las llamadas, la revisión y el uso conocidos; el cliente reintenta con el mismo `requestId` sin repetir efectos (`tests/agent/recovery-*.test.ts`).
+El estado del grafo conserva cola, mensajes modelo/herramientas y revisión por sesión. Los checkpoints MemorySaver bastan para la demo en un proceso; no sobreviven a reinicios. La decisión humana se interpreta en código contra la revisión mostrada (botones `confirmo/rechazo revisión <reviewId>` o el ejemplo textual del PRD para 006); un mensaje con condiciones o excepciones no autoriza el registro y pide aclaración (`tests/agent/hitl-adversarial.test.ts`). Si el proveedor falla, la respuesta 502 incluye las llamadas, la revisión y el uso conocidos; el cliente reintenta con el mismo `requestId` sin repetir efectos (`tests/agent/recovery-*.test.ts`).
 
 MAX_STEPS (llamadas al modelo, 25), MAX_TOOL_CALLS (100), LLM_TIMEOUT_MS (60 s), LLM_MAX_OUTPUT_TOKENS (4096), MAX_SESSION_TOKENS (200.000) y MAX_DAILY_TOKENS (2.000.000) limitan la ejecución; el servidor reserva presupuesto antes de cada turno y trata el uso desconocido como consumido. Las trazas LangSmith están deshabilitadas por invocación. Motivación y alternativas: ADR-004.
 

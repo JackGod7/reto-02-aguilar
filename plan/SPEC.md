@@ -44,7 +44,7 @@ Alertas con hoy=2026-09-03 → `out/alertas.md`: (1) vencen ≤60 d: CT-2026-009
 
 ## 6. Agente — decisión vigente ADR-004
 
-Node + LangGraph controla nodos modelo, herramienta, detección de revisión, interrupt, decisión y registro aprobado. LangChain ChatAnthropic devuelve un paso con texto, llamadas y uso conocido/desconocido, sin ejecutar herramientas. La UI presenta revisión y valores del backend; Command solo reanuda tras validar la decisión completa contra el snapshot y las huellas de fuente/maestro. Una regex afirmativa o un ID válido no bastan para autorizar texto ambiguo, exceptivo o con instrucciones adicionales: la gramática consume el mensaje completo.
+Node + LangGraph controla nodos modelo, herramienta, detección de revisión, interrupt, decisión y registro aprobado. LangChain ChatAnthropic devuelve un paso con texto, llamadas y uso conocido/desconocido, sin ejecutar herramientas. La UI presenta revisión y valores del backend; Command solo reanuda tras validar la decisión completa contra el snapshot y las huellas de fuente/maestro. Una regex afirmativa o un ID válido no bastan para autorizar texto ambiguo, exceptivo o con instrucciones adicionales: la decisión se interpreta en código contra la revisión mostrada.
 
 MAX_STEPS cuenta llamadas al modelo; MAX_TOOL_CALLS limita herramientas; LLM_TIMEOUT_MS y LLM_MAX_OUTPUT_TOKENS acotan tiempo/salida; MAX_SESSION_TOKENS limita sesión. Fallos conservan resultados parciales y diferencian consumo desconocido. LangSmith externo permanece desactivado.
 

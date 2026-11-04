@@ -1,6 +1,6 @@
 # RUNBOOK — Operar la demo en producción
 
-Servicio: https://reto-02-aguilar.onrender.com (Render Free, Docker, usuario no root). `ACCESS_KEY` está activa en el despliegue: las rutas `/api/*` (salvo `/api/health`) exigen la cabecera `x-access-key`, y sin ella `/api/reset` responde 403.
+Servicio: https://reto-02-aguilar.onrender.com (Render Free, Docker, usuario no root). `ACCESS_KEY` está activa en el despliegue: las rutas `/api/*` (salvo `/api/health`) exigen la cabecera `x-access-key`; sin ella o con valor incorrecto responden 401. `/api/reset` solo responde 403 si el servidor no tiene `ACCESS_KEY` configurada.
 
 ## 1. Antes de la demo
 1. **Despertar** (Free duerme por inactividad): abrir `GET /api/health` 2-3 min antes. Debe responder `{"ok":true,"provider":...,"model":...,"buildSha":...,"persistence":"process","tracing":false}`; contrastar `buildSha` con el último commit de `main`. El primer arranque en frío puede tardar; reintentar.
@@ -12,7 +12,7 @@ Servicio: https://reto-02-aguilar.onrender.com (Render Free, Docker, usuario no 
 ## 2. Clave y gasto
 - **Rotar `ANTHROPIC_API_KEY`**: crear clave nueva en Anthropic Console, actualizarla en Render > Environment (el servicio redespliega), verificar con `/api/health` y un chat, y revocar la anterior. Nunca pegarla en chat, logs ni repo. Igual para `ACCESS_KEY`.
 - **Límite de gasto**: fijarlo en Anthropic Console (límite mensual del workspace/organización) antes de exponer la URL. Es la única barrera externa; los topes del servidor son la interna.
-- Topes en código: `MAX_SESSION_TOKENS` (200.000 por defecto), `MAX_DAILY_TOKENS` (2.000.000 por día UTC, global), rate limit por IP. Referencia de la primera entrega (AI SDK): ~53.358 tokens por lote de 6 correos, unos 37 lotes al día antes del tope diario; la versión LangGraph no se ha medido.
+- Topes en código: `MAX_SESSION_TOKENS` (200.000 por defecto), `MAX_DAILY_TOKENS` (2.000.000 por día UTC, global), rate limit por IP. El consumo por lote de la versión LangGraph no se ha medido; revisar `tokens` en `out/turnos.jsonl` antes de estimar capacidad.
 
 ## 3. Qué mirar en logs (Render > Logs)
 - El servidor imprime solo `Servidor en :<puerto>` al arrancar. Los eventos de herramientas van a `out/log.jsonl` y un resumen por turno (SHA, modelo, estado, latencia, tokens, sin contenido) a `out/turnos.jsonl`, **no** a stdout, así que no aparecen en Render. Render Shell no existe en Free: pedir el estado con `GET /api/sessions/:id`.

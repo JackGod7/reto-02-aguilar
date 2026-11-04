@@ -62,7 +62,7 @@ La cifra histórica 53.358 tokens por lote corresponde a notas de una corrida AI
 
 ## 6. Estado y separación de entregas
 
-A (el reto) cumple sobre los seis fixtures: tsc limpio, 139/139 tests y demo ×2 determinista con `node scripts/verificar-entrega.ts`. B exige checkpointer durable, identidad, integridad transaccional, idempotencia, límites persistentes, observabilidad, backup restaurado y reversión; pasa de shadow a asistido con evidencia y decisión de negocio. MemorySaver no sobrevive a reinicios.
+A (el reto) cumple sobre los seis fixtures: tsc limpio, suite completa en verde y demo ×2 determinista con `node scripts/verificar-entrega.ts`. B exige checkpointer durable, identidad, integridad transaccional, idempotencia, límites persistentes, observabilidad, backup restaurado y reversión; pasa de shadow a asistido con evidencia y decisión de negocio. MemorySaver no sobrevive a reinicios.
 
 ## 7. Referencias de diseño
 

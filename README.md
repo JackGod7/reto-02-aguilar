@@ -52,7 +52,7 @@ node demo.ts
 
 Limpia `out/` y procesa los 6 mensajes llamando a las herramientas directamente, sin modelo ni clave. Muestra una primera pasada que deja 006 pendiente y una segunda llamada con `confirmado:true` como simulación explícita de la decisión humana. Ejecutarla solo sobre datos de demo que se puedan borrar.
 
-Pruebas (139 tests con `node --test`, sin clave ni red):
+Pruebas (`node --test`, sin clave ni red):
 
 ```bash
 npm test
@@ -79,7 +79,7 @@ Sin streaming: la respuesta llega completa; el indicador 'pensando…' cubre la 
 | `POST` | `/api/reset` | Borra el contenido de `out/` y las sesiones en memoria. 403 si el servidor no tiene `ACCESS_KEY`, 401 si la clave es incorrecta, 409 si hay turnos en curso. |
 | `GET` | `/api/health` | Estado, proveedor/modelo, `buildSha`, persistencia del proceso y trazas desactivadas. |
 
-Los botones envían `confirmo revisión <reviewId>` o `rechazo revisión <reviewId>` para la propuesta mostrada. La gramática consume el mensaje completo: añadir condiciones, excepciones o cambios exige aclaración. También se conserva el ejemplo textual del PRD para 006. Una respuesta perdida se recupera usando la misma sesión y el mismo `requestId` y mensaje; cambiar el contenido con ese identificador devuelve conflicto. La deduplicación de peticiones dura lo que dure el proceso.
+Los botones envían `confirmo revisión <reviewId>` o `rechazo revisión <reviewId>` para la propuesta mostrada. El backend interpreta la decisión contra la revisión mostrada: un mensaje con condiciones, excepciones o cambios no autoriza el registro y pide aclaración. También se conserva el ejemplo textual del PRD para 006. Una respuesta perdida se recupera usando la misma sesión y el mismo `requestId` y mensaje; cambiar el contenido con ese identificador devuelve conflicto. La deduplicación de peticiones dura lo que dure el proceso.
 
 Para preparar una demostración desde cero, el operador puede usar `/api/reset` con `x-access-key` cuando no haya turnos activos. Borra datos de demo y sesiones; no se usa como recuperación de un fallo del proveedor. Véase [RUNBOOK](docs/RUNBOOK.md).
 

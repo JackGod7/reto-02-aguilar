@@ -1,6 +1,6 @@
 # ADR-004: LangGraph para controlar el flujo y LangChain para el proveedor
 
-Estado: aceptada (2026-11-04). Implementada en `src/agent/graph.ts` y `src/llm/anthropic.ts`; tsc limpio y 139/139 tests.
+Estado: aceptada (2026-11-04). Implementada en `src/agent/graph.ts` y `src/llm/anthropic.ts`; tsc limpio y suite completa en verde.
 
 ## Problema y decisión
 
