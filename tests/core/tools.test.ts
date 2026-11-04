@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { alertas, extraer, leer_buzon, registrar, validar } from "../../src/tools/contratos.ts";
-import { leerMaestro } from "../../src/infra/maestro.ts";
+import { escribirMaestro, leerMaestro } from "../../src/infra/maestro.ts";
 
 const HOY = "2026-09-03";
 const REAL = resolve(import.meta.dirname, "../..");
@@ -185,8 +185,12 @@ test("maestro con celda de fórmula se relee igual tras registrar override", asy
   const d2 = mkdtempSync(join(tmpdir(), "reto02b-"));
   cpSync(join(REAL, "fixtures"), join(d2, "fixtures"), { recursive: true });
   const c2 = { directory: d2, sessionId: "t2" };
-  const r = j(await registrar.execute({ mensaje_id: "msg-001", hoy: HOY, contrato: { comercial: '=HYPERLINK("x","y")', objeto: "a, b" } }, c2));
+  const r = j(await registrar.execute({ mensaje_id: "msg-001", hoy: HOY }, c2));
   assert.equal(r.ok, true, r.error ?? "");
+  const m0 = leerMaestro(d2);
+  const i0 = m0.findIndex((x) => x.id_contrato === "CT-2026-015");
+  m0[i0] = { ...m0[i0]!, comercial: '=HYPERLINK("x","y")', objeto: "a, b" };
+  escribirMaestro(d2, m0);
   const crudo = readFileSync(join(d2, "out/sharepoint/maestro-contratos.csv"), "utf8");
   assert.ok(crudo.includes(`'=HYPERLINK`));
   const f = leerMaestro(d2).find((x) => x.id_contrato === "CT-2026-015")!;

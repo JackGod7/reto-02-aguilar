@@ -19,6 +19,30 @@ export function cargarPrompt(ruta = "agent/prompt.md"): string {
   }
 }
 
+// Revisiones pendientes por sesión y mensaje_id (session.pending conserva la última para la API/front).
+const pendientes = new WeakMap<Session, Map<string, NeedsConfirmation>>();
+function mapaPend(s: Session): Map<string, NeedsConfirmation> {
+  let m = pendientes.get(s);
+  if (!m) {
+    m = new Map();
+    pendientes.set(s, m);
+  }
+  if (s.pending && !m.has(s.pending.mensaje_id)) m.set(s.pending.mensaje_id, s.pending);
+  return m;
+}
+function ultima(m: Map<string, NeedsConfirmation>): NeedsConfirmation | null {
+  return [...m.values()].pop() ?? null;
+}
+
+/** La confirmación debe estar ligada: único pendiente, o el texto menciona el mensaje_id o un valor propuesto. */
+function confirmaPara(texto: string, p: NeedsConfirmation, total: number): boolean {
+  if (total === 1 || texto.includes(p.mensaje_id)) return true;
+  return p.campos.some((c) => {
+    const v = c.valor_propuesto;
+    return (typeof v === "string" || typeof v === "number") && String(v) !== "" && texto.includes(String(v));
+  });
+}
+
 export function usuarioConfirma(texto: string): boolean {
   return CONFIRMA.test(texto) && !RECHAZA.test(texto);
 }
@@ -58,7 +82,11 @@ export interface RunResult {
 export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
   const { session, message } = o;
   const confirma = usuarioConfirma(message);
-  if (session.pending && RECHAZA.test(message) && !confirma) session.pending = null;
+  const pend = mapaPend(session);
+  if (pend.size > 0 && RECHAZA.test(message) && !confirma) {
+    pend.clear();
+    session.pending = null;
+  }
   const run = o.runTool ?? ejecutarTool;
   const toolCalls: ToolCallInfo[] = [];
   let n = 0;
@@ -69,12 +97,16 @@ export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
     let salida: string;
     const a = (args && typeof args === "object" ? (args as Record<string, unknown>) : {}) as Record<string, unknown>;
     if (name === "contratos_registrar" && a.confirmado === true) {
-      const p = session.pending;
-      if (!(p && p.mensaje_id === a.mensaje_id && confirma)) {
+      const p = typeof a.mensaje_id === "string" ? pend.get(a.mensaje_id) : undefined;
+      const claves = a.contrato && typeof a.contrato === "object" ? Object.keys(a.contrato) : [];
+      const fuera = p ? claves.filter((k) => !p.campos.some((c) => c.campo === k)) : claves;
+      if (!(p && confirma && confirmaPara(message, p, pend.size))) {
         salida = JSON.stringify({
           ok: false,
-          error: "confirmado:true rechazado: no hay revisión pendiente para ese mensaje_id o el usuario no ha confirmado explícitamente",
+          error: "confirmado:true rechazado: no hay revisión pendiente para ese mensaje_id o el usuario no ha confirmado explícitamente ese mensaje",
         });
+      } else if (fuera.length > 0) {
+        salida = JSON.stringify({ ok: false, error: `override rechazado: campos fuera de la revisión pendiente (${fuera.join(", ")})` });
       } else {
         salida = await run(name, args, { directory: o.directory, sessionId: session.id });
       }
@@ -91,9 +123,11 @@ export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
           campos,
           pregunta: `El mensaje ${mid} requiere revisión (${campos.map((c) => c.campo).join(", ")}). ¿Confirmas el registro con estos valores?`,
         };
-      } else if (r.ok && session.pending && session.pending.mensaje_id === a.mensaje_id) {
-        session.pending = null;
-        nuevaRevision = null;
+        pend.set(mid, nuevaRevision);
+      } else if (r.ok && typeof a.mensaje_id === "string" && pend.has(a.mensaje_id)) {
+        pend.delete(a.mensaje_id);
+        if (nuevaRevision && (nuevaRevision as NeedsConfirmation).mensaje_id === a.mensaje_id) nuevaRevision = null;
+        session.pending = ultima(pend);
       }
     }
     // El gate no depende de que el modelo llame registrar: si validar detecta revisión, el servidor
@@ -109,6 +143,7 @@ export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
             campos,
             pregunta: `El mensaje ${a.mensaje_id} requiere revisión (${campos.map((c) => c.campo).join(", ")}). ¿Confirmas el registro con estos valores?`,
           };
+          pend.set(a.mensaje_id, nuevaRevision);
         }
       }
     }
@@ -122,6 +157,7 @@ export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
 
   session.tokens += res.tokens;
   if (nuevaRevision) session.pending = nuevaRevision;
+  else session.pending = ultima(pend);
   const pending: NeedsConfirmation | null = session.pending;
   const reply = res.texto || (pending ? pending.pregunta : "Listo.");
   const guardado = pending ? `${reply}\n[pendiente de confirmación: ${pending.mensaje_id}]` : reply;

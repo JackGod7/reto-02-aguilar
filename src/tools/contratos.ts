@@ -91,7 +91,7 @@ const hoyArg = z
 const overrideArg = z
   .record(z.string(), z.unknown())
   .optional()
-  .describe("Override opcional de campos del contrato (solo cambia valores; no sube la confianza)");
+  .describe("Corrección opcional, solo de campos que estén en revisión y solo junto con confirmado:true (el servidor lo verifica)");
 
 export const leer_buzon: ToolDef<z.ZodObject<{}, z.core.$strict>> = {
   description: "Lista los mensajes del buzón pendientes de procesar (excluye los ya procesados).",
@@ -130,15 +130,13 @@ export const extraer: ToolDef<z.ZodObject<{ mensaje_id: typeof mensajeId }, z.co
   },
 };
 
-export const validar: ToolDef<
-  z.ZodObject<{ mensaje_id: typeof mensajeId; contrato: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>> }, z.core.$strict>
-> = {
+export const validar: ToolDef<z.ZodObject<{ mensaje_id: typeof mensajeId }, z.core.$strict>> = {
   description: "Clasifica el mensaje (nuevo, actualizacion, duplicado, rechazado) y lista campos a revisar.",
-  args: z.object({ mensaje_id: mensajeId, contrato: overrideArg }).strict(),
+  args: z.object({ mensaje_id: mensajeId }).strict(),
   async execute(args, ctx) {
     return envolver("validar", ctx, null, () => {
       const p = validar.args.parse(args);
-      const { val } = analizar(ctx.directory, p.mensaje_id, p.contrato);
+      const { val } = analizar(ctx.directory, p.mensaje_id);
       return { respuesta: ok(val), resumen: `clasificación=${val.clasificacion}`, ok: true, mid: p.mensaje_id };
     });
   },
@@ -177,6 +175,22 @@ function registrarSync(
   const p = registrar.args.parse(args);
   const hoy = p.hoy ?? process.env.HOY ?? HOY_DEFECTO;
   if (!esFechaIso(hoy)) return { respuesta: fail("hoy inválido"), resumen: "hoy inválido", ok: false };
+  if (p.contrato && Object.keys(p.contrato).length > 0) {
+    // Anti-bypass del gate HITL: el override solo es válido con confirmación y solo sobre campos
+    // que el servidor (no el modelo) marca en revisión para ese mensaje.
+    if (p.confirmado !== true) {
+      return { respuesta: fail("override `contrato` rechazado: requiere confirmado:true tras confirmación de la persona"), resumen: "override sin confirmar", ok: false };
+    }
+    const base = analizar(ctx.directory, p.mensaje_id);
+    const permitidos = new Set(base.val.requiere_revision);
+    const fuera = Object.keys(p.contrato).filter((k) => !permitidos.has(k));
+    if (fuera.length > 0) {
+      return {
+        respuesta: fail(`override rechazado: campos fuera de revisión (${fuera.join(", ")}); permitidos: ${[...permitidos].join(", ") || "ninguno"}`),
+        resumen: `override fuera de revisión: ${fuera.join(", ")}`, ok: false,
+      };
+    }
+  }
   const { ext, val, maestro, adjunto } = analizar(ctx.directory, p.mensaje_id, p.contrato);
   const c = ext.contrato;
 
