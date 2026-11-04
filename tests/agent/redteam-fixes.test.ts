@@ -122,3 +122,16 @@ test("H2: remitente desconocido que cambia valor o fechas de un contrato existen
   assert.equal(r.ok, false);
   assert.deepEqual(r.revision?.map((c) => c.campo).sort(), [...cambios].sort());
 });
+
+test("H3/RT16: hoy anterior al corte del maestro o futuro (>1 día del reloj) se rechaza; el de la demo pasa", async (t) => {
+  const directory = copia(t);
+  for (const hoy of ["1999-12-31", "2026-05-29", "2099-01-01"]) {
+    const r = await tool(directory, "contratos_registrar", { mensaje_id: "msg-001", hoy });
+    assert.equal(r.ok, false, hoy);
+    assert.match(r.error ?? "", /hoy/);
+    assert.equal((await tool(directory, "contratos_alertas", { hoy })).ok, false, hoy);
+  }
+  assert.ok(!existsSync(join(directory, "out/sharepoint/maestro-contratos.csv")), "no se escribió nada");
+  assert.equal((await tool(directory, "contratos_registrar", { mensaje_id: "msg-001", hoy: "2026-09-03" })).ok, true);
+  assert.equal((await tool(directory, "contratos_alertas", { hoy: "2026-09-03" })).ok, true);
+});

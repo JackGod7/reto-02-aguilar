@@ -1,7 +1,7 @@
 import type { FilaMaestro } from "./contrato.ts";
 import { addDays, diasEntre } from "./fechas.ts";
 
-const CORTE_MAESTRO = "2026-05-30";
+export const CORTE_MAESTRO = "2026-05-30";
 const VENTANA_DIAS = 60;
 
 interface ItemAlerta {

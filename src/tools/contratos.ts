@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { calcularAlertas, renderAlertasMd } from "../domain/alertas.ts";
+import { calcularAlertas, CORTE_MAESTRO, renderAlertasMd } from "../domain/alertas.ts";
 import { aplicarOverride, idContratoSchema, overrideSchema } from "../domain/contrato.ts";
 import type { FilaMaestro } from "../domain/contrato.ts";
 import { extraerContrato } from "../domain/extraccion.ts";
@@ -33,6 +33,8 @@ interface ToolDef<A extends z.ZodRawShape> {
 const esquema = <A extends z.ZodRawShape>(args: A) => z.object(args).strict();
 
 const HOY_DEFECTO = "2026-09-03";
+/** `hoy` no es arbitrario: ni antes del corte del maestro ni a más de 1 día del reloj del servidor. La demo (2026-09-03) cabe. */
+const hoyPermitido = (hoy: string): boolean => esFechaIso(hoy) && hoy >= CORTE_MAESTRO && hoy <= new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
 const ok = (data: unknown): string => JSON.stringify({ ok: true, data });
 const fail = (error: string, extra: Record<string, unknown> = {}): string =>
   JSON.stringify({ ok: false, error, ...extra });
@@ -314,7 +316,7 @@ function registrarNuevo(ctx: ToolContext, a: Analisis, c: Contrato, mensajeId: s
 function registrarSync(args: unknown, ctx: ToolContext): Resultado {
   const p = esquema(ARGS_REGISTRAR).parse(args);
   const hoy = p.hoy ?? process.env.HOY ?? HOY_DEFECTO;
-  if (!esFechaIso(hoy)) return rechazo("hoy inválido", "hoy inválido");
+  if (!hoyPermitido(hoy)) return rechazo("hoy inválido: debe ser posterior al corte del maestro y no futuro", "hoy inválido");
   const veto = validarOverride(p, ctx);
   if (veto) return veto;
 
@@ -369,7 +371,7 @@ export const alertas: ToolDef<typeof ARGS_ALERTAS> = {
   async execute(args, ctx) {
     return envolver("alertas", ctx, null, () => {
       const p = esquema(ARGS_ALERTAS).parse(args);
-      if (!esFechaIso(p.hoy)) return { respuesta: fail("hoy inválido"), resumen: "hoy inválido", ok: false };
+      if (!hoyPermitido(p.hoy)) return { respuesta: fail("hoy inválido: debe ser posterior al corte del maestro y no futuro"), resumen: "hoy inválido", ok: false };
       const a = calcularAlertas(leerMaestro(ctx.directory), p.hoy);
       const ruta = escribirTextoOut(ctx.directory, "alertas.md", renderAlertasMd(a, p.hoy));
       return {
