@@ -115,6 +115,9 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
     rate_limited: 'Demasiadas solicitudes seguidas. Espera un minuto y vuelve a intentarlo.',
     token_limit: 'Esta conversación alcanzó su límite. Pulsa «Nueva conversación» para seguir.',
     busy: 'Todavía estoy procesando el mensaje anterior. Espera un momento.',
+    request_in_progress: 'Tu petición anterior sigue en proceso. Espera un momento y pulsa «Recuperar petición».',
+    request_conflict: 'La petición pendiente no coincide con este mensaje. Inicia una nueva conversación.',
+    request_limit: 'Esta conversación alcanzó su límite de peticiones. Pulsa «Nueva conversación» para seguir.',
     llm_error: 'El modelo no pudo responder. Inténtalo de nuevo.',
     daily_token_limit: 'El servicio alcanzó su límite diario de tokens. Inténtalo mañana.',
     too_many_sessions: 'Hay demasiadas conversaciones activas. Inténtalo más tarde.',
@@ -181,7 +184,14 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
     const pending = state.pendingRequest;
     if (!pending || pending.sessionId !== state.sessionId) return;
     const button = el('button', { type: 'button' }, 'Recuperar petición');
-    button.addEventListener('click', () => sendMessage(pending.message, { display: false }));
+    button.addEventListener('click', () => {
+      // Un botón viejo no debe reenviar con un requestId nuevo si la petición ya se resolvió.
+      const actual = state.pendingRequest;
+      if (state.busy) return;
+      button.disabled = true;
+      if (!actual || actual.requestId !== pending.requestId || actual.sessionId !== state.sessionId) return;
+      sendMessage(actual.message, { display: false });
+    });
     log.append(button);
   }
 
@@ -382,10 +392,17 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
       el('div', { class: 'btns' }, okBtn, noBtn),
       status);
 
+    const sesion = state.sessionId;
     const disable = () => { okBtn.disabled = true; noBtn.disabled = true; };
     const decide = (texto, etiqueta) => {
       if (state.busy) return;
       disable();
+      // Una revisión pertenece a su sesión: nunca enviarla a otra creada después.
+      if (!sesion || sesion !== state.sessionId) {
+        status.textContent = 'Esta revisión pertenecía a una sesión que ya no existe; vuelve a procesar el correo.';
+        state.pendingBlock = null;
+        return;
+      }
       status.textContent = 'Enviado: ' + etiqueta;
       state.pendingBlock = null;
       sendMessage(texto);
@@ -461,9 +478,13 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
       }
       body = pending || { message: text, sessionId: state.sessionId, requestId: crypto.randomUUID() };
       saveRequest(body);
-      // Confirmar persistencia local antes de iniciar un efecto remoto recuperable.
-      if (localStorage.getItem('contratos.request') !== JSON.stringify(body) || loadSession() !== state.sessionId) {
-        throw { code: 'storage', message: 'No pude guardar la sesión y la petición; habilita almacenamiento local para continuar.' };
+      // Sin almacenamiento local la sesión y el requestId viven en memoria de la pestaña:
+      // el reintento sigue siendo idempotente; solo se pierde la recuperación tras recargar.
+      let persistido = false;
+      try { persistido = localStorage.getItem('contratos.request') === JSON.stringify(body) && loadSession() === state.sessionId; } catch { /* sin almacenamiento */ }
+      if (!persistido && !state.avisoMemoria) {
+        state.avisoMemoria = true;
+        addNotice('El navegador no permite guardar datos locales: si recargas la página no podré recuperar una petición pendiente.');
       }
       const data = await api('/api/chat', { method: 'POST', body: JSON.stringify(body) });
       if (data.sessionId !== body.sessionId || data.requestId !== body.requestId || typeof data.reply !== 'string' || !Array.isArray(data.toolCalls)) throw { code: 'network' };
@@ -494,7 +515,7 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
       if (Array.isArray(err.toolCalls) && err.toolCalls.length) {
         addMessage({ role: 'assistant', toolCalls: err.toolCalls, needsConfirmation: err.needsConfirmation });
       } else if (err.needsConfirmation) addConfirm(err.needsConfirmation);
-      addError(explainError(err));
+      if (!isSessionGone(err)) addError(explainError(err));
       recoverButton();
       return false;
     } finally {
