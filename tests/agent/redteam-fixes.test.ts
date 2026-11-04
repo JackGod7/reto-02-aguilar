@@ -47,3 +47,27 @@ test("H1: el adapter Anthropic no envía un historial terminado en assistant", a
   await adapter.generarPaso([{ role: "assistant", content: "b" }, { role: "user", content: "a" }], [], {});
   assert.equal(enviados, 1);
 });
+
+test("RN5.3: variantes naturales de la frase del PRD aprueban; condicionales, otros valores y extras no", async (t) => {
+  const malas = [
+    "sí, confirmo valor 0 y fecha fin 2027-08-30", "sí, confirmo valor 1 y fecha fin 2027-08-31",
+    "sí, confirmo valor 0 y fecha fin 2027-08-31 pero espera", "sí, confirmo valor 0 y fecha fin 2027-08-31 excepto el valor",
+    "sí pero confirmo valor 0 y fecha fin 2027-08-31", "no, confirmo valor 0 y fecha fin 2027-08-31", "si acaso confirmo valor 0 y fecha fin 2027-08-31",
+    "sí, ok, confirmo valor 0 y fecha fin 2027-08-31", "sí, confirmo valор 0 y fecha fin 2027-08-31",
+  ];
+  const buenas = ["sí, confirmo valor 0 y fecha fin 2027-08-31", "Ok, confirmo el valor 0 y la fecha de fin 2027-08-31.", "si confirmo, el valor 0, y la fecha fin 2027-08-31!".replace("si confirmo,", "sí, confirmo")];
+  for (const frase of buenas) {
+    const e = entorno(t, [paso(registrar())]);
+    await e.run("procesa msg-006");
+    const r = await e.run(frase);
+    assert.equal(r.needsConfirmation, null, frase);
+    assert.equal(r.toolCalls[0]?.ok, true, frase);
+  }
+  const e = entorno(t, [paso(registrar())]);
+  const id = (await e.run("procesa msg-006")).needsConfirmation!.reviewId;
+  for (const frase of malas) {
+    const r = await e.run(frase);
+    assert.equal(r.needsConfirmation?.reviewId, id, frase);
+    assert.equal(r.toolCalls.length, 0, frase);
+  }
+});

@@ -162,14 +162,14 @@ function frasesAceptadas(r: Pick<Revision, "campos" | "reviewId" | "mensaje_id">
 function decisionHumana(r: Revision, message: string): DecisionHumana | null {
   if (hash(r.operacion, r.campos, r.sourceFingerprint) !== r.operationHash) return null;
   // Normaliza solo forma (mayúsculas, espacios, punto/exclamación final); cualquier palabra extra sigue sin autorizar.
-  const texto = message.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!]+$/u, "").trim();
+  const texto = message.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!]+$/u, "").trim().replace(/^(?:s[ií]|ok|vale|listo),? /u, "");
   const aprobaciones = [
     `confirmo revisión ${r.reviewId}`,
     `confirmo ${r.mensaje_id} (revisión ${r.reviewId})`,
   ];
   const prd = frasePRD(r);
   const escapar = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const variantePRD = prd ? new RegExp(`^confirmo:? (?:el )?valor ${escapar(String(prd.valor))},? y (?:la )?fecha (?:de )?fin ${escapar(prd.fin)}$`, "u") : null;
+  const variantePRD = prd ? new RegExp(`^confirmo,?:? (?:el )?valor ${escapar(String(prd.valor))},? y (?:la )?fecha (?:de )?fin ${escapar(prd.fin)}$`, "u") : null;
   const rechazos = [
     `rechazo revisión ${r.reviewId}`,
     `rechazo el registro de ${r.mensaje_id}`,
