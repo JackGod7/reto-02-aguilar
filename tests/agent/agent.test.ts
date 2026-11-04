@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { crearServidor } from "../../src/server.ts";
 import type { RespuestaChat, RespuestaError, RespuestaSesion } from "./tipos.ts";
-import type { Herramienta, LLMAdapter, Mensaje } from "../../src/llm/adapter.ts";
+import type { LlamadaLLM, LLMAdapter, MensajePaso } from "../../src/llm/adapter.ts";
 
 const CLAVE = "sk-ant-SECRETO-123";
 process.env.ANTHROPIC_API_KEY = CLAVE;
@@ -25,18 +25,20 @@ async function runTool(name: string, args: unknown): Promise<string> {
   return JSON.stringify({ ok: true, data: {} });
 }
 
-/** Modelo guionado: cada guion recibe las herramientas y el último mensaje del usuario. */
-function adapter(guion: (h: Record<string, Herramienta>, ultimo: string) => Promise<string>): LLMAdapter {
+/** Modelo guionado por paso: recibe el historial y devuelve llamadas (o texto final si no hay). */
+function adapter(guion: (historial: MensajePaso[]) => LlamadaLLM[] | string): LLMAdapter {
   return {
     provider: "mock",
     model: "mock-1",
-    async enviar(mensajes: Mensaje[], herramientas: Herramienta[]) {
-      const h = Object.fromEntries(herramientas.map((x) => [x.name, x]));
-      const texto = await guion(h, mensajes[mensajes.length - 1]?.content ?? "");
-      return { texto, pasos: 3, tokens: 100 };
+    async generarPaso(historial) {
+      const r = guion(historial);
+      return typeof r === "string" ? { texto: r, llamadas: [], tokens: 100, usoConocido: true } : { texto: "", llamadas: r, tokens: 100, usoConocido: true };
     },
   };
 }
+const reg = (mensaje_id: string, extra: Record<string, unknown> = {}): LlamadaLLM => ({ id: `r-${mensaje_id}-${Object.keys(extra).length}`, name: "contratos_registrar", args: { mensaje_id, ...extra } });
+/** Primer paso del turno: el último mensaje del historial es del usuario. */
+const inicioTurno = (h: MensajePaso[]): boolean => h.at(-1)?.role === "user";
 
 async function conServidor(ad: LLMAdapter, fn: (base: string) => Promise<void>, extra = {}): Promise<void> {
   const srv = crearServidor({ adapter: ad, prompt: "p", runTool, webDir: "web", ...extra });
@@ -51,17 +53,7 @@ async function conServidor(ad: LLMAdapter, fn: (base: string) => Promise<void>, 
 const post = (base: string, body: unknown, headers: Record<string, string> = {}) =>
   fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
-const lote = adapter(async (h, ultimo) => {
-  if (/confirmo/i.test(ultimo)) {
-    await h.contratos_registrar!.execute({ mensaje_id: "msg-006", confirmado: true });
-    return "006 registrado";
-  }
-  for (const id of ["msg-001", "msg-002", "msg-006"]) {
-    const r = JSON.parse(await h.contratos_registrar!.execute({ mensaje_id: id })) as { ok: boolean };
-    if (!r.ok) return `Me detengo en ${id}`;
-  }
-  return "fin";
-});
+const lote = adapter((h) => inicioTurno(h) && /procesa/.test(h.at(-1)!.content) ? ["msg-001", "msg-002", "msg-006"].map((id) => reg(id)) : "fin");
 
 test("el lote se detiene en 006 con needsConfirmation y luego se confirma", async () => {
   registrados.length = 0;
@@ -75,7 +67,7 @@ test("el lote se detiene en 006 con needsConfirmation y luego se confirma", asyn
     assert.match(r1.sessionId, /^[0-9a-f-]{36}$/);
     const s = (await (await fetch(`${base}/api/sessions/${r1.sessionId}`)).json()) as RespuestaSesion;
     assert.equal(s.pending?.mensaje_id, "msg-006");
-    const r2 = (await (await post(base, { sessionId: r1.sessionId, message: "confirmo el registro" })).json()) as RespuestaChat;
+    const r2 = (await (await post(base, { sessionId: r1.sessionId, message: "confirmo el valor 0 y la fecha fin 2027-08-31" })).json()) as RespuestaChat;
     assert.equal(r2.needsConfirmation, null);
     assert.ok(registrados.includes("msg-006"));
   });
@@ -83,13 +75,10 @@ test("el lote se detiene en 006 con needsConfirmation y luego se confirma", asyn
 
 test("confirmado:true sin revisión pendiente es rechazado", async () => {
   registrados.length = 0;
-  const ad = adapter(async (h) => {
-    const r = JSON.parse(await h.contratos_registrar!.execute({ mensaje_id: "msg-006", confirmado: true })) as { ok: boolean };
-    return r.ok ? "registrado" : "rechazado";
-  });
+  const ad = adapter((h) => inicioTurno(h) ? [reg("msg-006", { confirmado: true })] : "rechazado");
   await conServidor(ad, async (base) => {
     const r = (await (await post(base, { message: "confirmo todo" })).json()) as RespuestaChat;
-    assert.equal(r.reply, "rechazado");
+    assert.ok(r.reply.startsWith("rechazado"));
     assert.equal(r.toolCalls[0].ok, false);
     assert.deepEqual(registrados, []);
   });
@@ -97,18 +86,14 @@ test("confirmado:true sin revisión pendiente es rechazado", async () => {
 
 test("confirmado:true con pendiente pero sin confirmación del usuario es rechazado", async () => {
   registrados.length = 0;
-  const ad = adapter(async (h, ultimo) => {
-    if (/dame más info/.test(ultimo)) {
-      const r = JSON.parse(await h.contratos_registrar!.execute({ mensaje_id: "msg-006", confirmado: true })) as { ok: boolean };
-      return r.ok ? "registrado" : "rechazado";
-    }
-    await h.contratos_registrar!.execute({ mensaje_id: "msg-006" });
-    return "pendiente";
-  });
+  let pasos = 0;
+  const ad = adapter((h) => { pasos++; return inicioTurno(h) ? [reg("msg-006")] : "pendiente"; });
   await conServidor(ad, async (base) => {
     const r1 = (await (await post(base, { message: "procesa 006" })).json()) as RespuestaChat;
     const r2 = (await (await post(base, { sessionId: r1.sessionId, message: "dame más info" })).json()) as RespuestaChat;
-    assert.equal(r2.reply, "rechazado");
+    assert.equal(r2.needsConfirmation?.mensaje_id, "msg-006", "la revisión sigue pendiente");
+    assert.equal(r2.toolCalls.length, 0);
+    assert.equal(pasos, 1, "un mensaje que no es decisión no llama al modelo");
     assert.deepEqual(registrados, []);
   });
 });
@@ -140,7 +125,7 @@ test("health no depende del LLM; ACCESS_KEY y rate limit", async () => {
 });
 
 test("la clave no aparece en ninguna respuesta (ni en error del proveedor)", async () => {
-  const falla = adapter(async () => {
+  const falla = adapter(() => {
     throw new Error(`401 invalid x-api-key ${CLAVE}`);
   });
   await conServidor(falla, async (base) => {
@@ -156,9 +141,10 @@ test("la clave no aparece en ninguna respuesta (ni en error del proveedor)", asy
 });
 
 test("tope de tokens por sesión", async () => {
-  await conServidor(lote, async (base) => {
+  const gasta = { ...adapter(() => "hola"), async generarPaso() { return { texto: "hola", llamadas: [], tokens: 20_000, usoConocido: true }; } };
+  await conServidor(gasta, async (base) => {
     const r1 = (await (await post(base, { message: "hola" })).json()) as RespuestaChat;
     const r2 = await post(base, { sessionId: r1.sessionId, message: "otra" });
     assert.equal(r2.status, 429);
-  }, { maxSessionTokens: 100 });
+  }, { maxSessionTokens: 20_000 });
 });

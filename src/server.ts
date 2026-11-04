@@ -8,10 +8,12 @@ import { crearAnthropicAdapter } from "./llm/anthropic.ts";
 import type { LLMAdapter } from "./llm/adapter.ts";
 import { crearSesion, limpiarSesiones, obtenerSesion, olvidarSesion } from "./agent/session.ts";
 import type { ejecutarTool } from "./agent/registry.ts";
-import { ejecutarTurno, MAX_MENSAJE } from "./agent/run.ts";
+import { ejecutarTurnoGrafo, ErrorTurnoGrafo } from "./agent/graph.ts";
 import { buildSystemPrompt } from "./agent/context.ts";
 import { appendFileSync, mkdirSync } from "node:fs";
-import type { RunResult } from "./agent/run.ts";
+import type { RunResult } from "./agent/graph.ts";
+
+const MAX_MENSAJE = 2000;
 
 export interface ServerOpts {
   adapter: LLMAdapter;
@@ -247,11 +249,10 @@ export function crearServidor(o: ServerOpts): Server {
         enviar(res, code, data);
       }
       try {
-        resultado = await ejecutarTurno({ adapter: o.adapter, session, message: body.message, directory, prompt, maxTokens: session.tokens + reserva, runTool: o.runTool });
+        resultado = await ejecutarTurnoGrafo({ adapter: o.adapter, session, message: body.message, directory, prompt, maxTokens: session.tokens + reserva, runTool: o.runTool });
         return responder(200, { sessionId: session.id, requestId, ...resultado });
       } catch (e) {
         const msg = e instanceof Error && e.message.startsWith("LLM no configurado") ? e.message : "El proveedor del modelo falló o expiró; la sesión sigue activa, reintenta";
-        const { ErrorTurnoGrafo } = await import("./agent/graph.ts");
         if (e instanceof ErrorTurnoGrafo) {
           resultado = e.partial;
           return responder(502, { error: { code: "llm_error", message: msg }, sessionId: session.id, requestId, ...e.partial });

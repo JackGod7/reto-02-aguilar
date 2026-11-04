@@ -30,7 +30,7 @@ async function servidor(t: { after(fn: () => Promise<void>): void }, adapter: LL
   };
 }
 function adapterLocal(onCall: () => void = () => undefined): LLMAdapter {
-  return { provider: "local", model: "local", async enviar() { onCall(); return { texto: "ok", pasos: 1, tokens: 1 }; } };
+  return { provider: "local", model: "local", async generarPaso() { onCall(); return { texto: "ok", llamadas: [], tokens: 1, usoConocido: true }; } };
 }
 
 test("Recovery adversarial: GET expira la sesión aunque nadie cree otra sesión", async (t) => {
@@ -60,8 +60,8 @@ test("Recovery adversarial: presupuesto pendiente conserva su día al cruzar med
   let llamadas = 0;
   const e = await servidor(t, {
     provider: "local", model: "local",
-    async enviar() { const intento = ++llamadas; if (intento === 1) { iniciado.resolve(); await acabar.promise; } return { texto: "ok", pasos: 1, tokens: intento === 3 ? 10 : 80 }; },
-  }, { maxDailyTokens: 100, maxSessionTokens: 100 });
+    async generarPaso() { const intento = ++llamadas; if (intento === 1) { iniciado.resolve(); await acabar.promise; } return { texto: "ok", llamadas: [], tokens: intento === 3 ? 10_000 : 80_000, usoConocido: true }; },
+  }, { maxDailyTokens: 100_000, maxSessionTokens: 100_000 });
   t.after(async () => { acabar.resolve(); });
   const s1 = await e.sesion();
   const primera = e.post("/api/chat", { sessionId: s1, requestId: randomUUID(), message: "primera" });

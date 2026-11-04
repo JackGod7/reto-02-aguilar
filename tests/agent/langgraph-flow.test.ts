@@ -21,7 +21,6 @@ function entorno(t: { after(fn: () => void): void }, respuestas: Array<PasoLLM |
   let llamadas = 0;
   const adapter: LLMAdapter = {
     provider: "falso-local", model: "falso-local",
-    async enviar() { throw new Error("El bucle antiguo no debe ejecutarse"); },
     async generarPaso(history) {
       histories.push(structuredClone(history));
       const res = respuestas[llamadas++] ?? paso();

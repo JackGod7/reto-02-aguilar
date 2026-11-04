@@ -23,7 +23,7 @@ async function servidor(t: { after(fn: () => Promise<void>): void }, adapter: LL
 test("Regresión 5: errores del proveedor sin respuesta cobran una cota acotada, no la reserva completa", async (t) => {
   let llamadas = 0;
   const adapter: LLMAdapter = {
-    provider: "mock", model: "mock", async enviar() { throw new Error("legado"); },
+    provider: "mock", model: "mock",
     async generarPaso() { llamadas++; throw new Error("proveedor caído"); },
   };
   // Antes: cada error cobraba 40k de 400k diarios y el servicio quedaba bloqueado tras 10 errores.

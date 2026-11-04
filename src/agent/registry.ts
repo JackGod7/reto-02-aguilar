@@ -15,19 +15,12 @@ interface ToolLike {
   execute(args: never, ctx: ToolContext): Promise<string>;
 }
 
-export type Ejecutor = (name: string, args: unknown) => Promise<string>;
-
-/** Construye las herramientas `contratos_*` para el modelo; `ejecutor` decide cómo se ejecuta cada llamada (gate, registro). */
-export function construirHerramientas(ejecutor: Ejecutor): Herramienta[] {
-  const out: Herramienta[] = [];
-  for (const [nombre, def] of Object.entries(contratos)) {
-    const t = def as unknown as ToolLike;
-    if (!t || typeof t !== "object" || typeof t.execute !== "function" || !t.args) continue;
-    const name = `contratos_${nombre}`;
-    out.push({ name, description: t.description, inputSchema: z.object(t.args).strict(), execute: (args) => ejecutor(name, args) });
-  }
-  return out;
-}
+/** Esquemas `contratos_*` publicados al modelo; la ejecución pasa siempre por `ejecutarTool`. */
+export const herramientas: Herramienta[] = Object.entries(contratos).flatMap(([nombre, def]) => {
+  const t = def as unknown as ToolLike;
+  return t && typeof t === "object" && typeof t.execute === "function" && t.args
+    ? [{ name: `contratos_${nombre}`, description: t.description, inputSchema: z.object(t.args).strict() }] : [];
+});
 
 export async function ejecutarTool(nombre: string, args: unknown, ctx: ToolContext): Promise<string> {
   const fallo = (error: string): string => {

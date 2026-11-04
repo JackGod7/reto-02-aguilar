@@ -73,7 +73,6 @@ for (const cambio of ["valor", "ninguno"] as const) {
     let invocaciones = 0;
     const adapter: LLMAdapter = {
       provider: "local", model: "local",
-      async enviar() { throw new Error("No usar bucle anterior"); },
       async generarPaso(): Promise<PasoLLM> {
         return { texto: "", llamadas: invocaciones++ === 0 ? [{ id: "validar", name: "contratos_validar", args: { mensaje_id: "msg-004" } }] : [], tokens: 1, usoConocido: true };
       },

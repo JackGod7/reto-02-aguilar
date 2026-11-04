@@ -22,7 +22,6 @@ function entorno(t: { after(fn: () => void): void }, respuestas: PasoLLM[]) {
   let llamadas = 0;
   const adapter: LLMAdapter = {
     provider: "adversarial-local", model: "adversarial-local",
-    async enviar() { throw new Error("No ejecutar el bucle antiguo"); },
     async generarPaso() { return structuredClone(respuestas[llamadas++] ?? paso()); },
   };
   const maestro = () => {

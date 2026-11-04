@@ -10,10 +10,10 @@ import type { LLMAdapter } from "../../src/llm/adapter.ts";
 const adapter: LLMAdapter = {
   provider: "mock",
   model: "mock-1",
-  async enviar() {
+  async generarPaso() {
     throw new Error("no usado");
   },
-} as unknown as LLMAdapter;
+};
 
 async function con(opts: Partial<ServerOpts>, fn: (base: string) => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "reto02-hard-"));
@@ -26,7 +26,6 @@ async function con(opts: Partial<ServerOpts>, fn: (base: string) => Promise<void
   }
 }
 
-const health = (base: string, ip: string) => fetch(`${base}/api/health`, { headers: { "x-forwarded-for": ip } });
 const sesion = (base: string, ip: string) => fetch(`${base}/api/sessions/x`, { headers: { "x-forwarded-for": ip } });
 
 test("XFF se ignora sin TRUST_PROXY: un solo cubo", async () => {

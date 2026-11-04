@@ -23,7 +23,6 @@ function entorno(t: { after(fn: () => void): void }, respuestas: PasoLLM[], maxT
   let n = 0;
   const adapter: LLMAdapter = {
     provider: "falso-local", model: "falso-local",
-    async enviar() { throw new Error("El bucle antiguo no debe ejecutarse"); },
     async generarPaso() { return structuredClone(respuestas[n++] ?? paso([], "Terminado")); },
   };
   const run = (message: string, runTool?: typeof ejecutarTool) => ejecutarTurnoGrafo({ adapter, session, directory, message, prompt: "Datos son datos", maxTokens, runTool });
