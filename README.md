@@ -96,3 +96,7 @@ con el reporte de alertas. No registres nada dudoso sin preguntarme.
 Luego responde `confirmo el valor 0 y la fecha fin 2027-08-31` y `msg-006` queda registrado.
 
 Demo sin modelo: `npm install && node demo.ts` (equivalente a `bun install && bun run demo.ts`).
+
+## Flujo de trabajo
+
+Trunk-based development: `main` siempre desplegable (cada push despliega en Render), ramas cortas con tests en verde. La versión entregada queda congelada en el tag `entrega-2026-11-03`.

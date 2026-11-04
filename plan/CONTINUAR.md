@@ -31,7 +31,13 @@ Estado al 2026-11-03, commit `0a5eaa6` en `main`.
 8. SOLUCION §4: costo USD estimado por caso (≈8.900 tokens/caso × tarifa vigente); §9: estados exactos Hecho/Parcial/No hecho.
 9. Observaciones: el tope del ejecutor cuenta llamadas y no pasos; "confirmo msg-0060" casa con msg-006 (usar límite de palabra).
 
+10. Escalamiento de modelo (cascada): Haiku por defecto y Sonnet (`claude-sonnet-5-5`) cuando hay una revisión pendiente, un error de herramienta, se llega al tope de pasos o el turno es explicativo. Implementar en el adapter (`src/llm/`) con `LLM_MODEL` y `LLM_MODEL_ESCALADO`, loguear qué modelo respondió y documentarlo como ADR-004. Para la defensa basta poner `LLM_MODEL=claude-sonnet-5-5` en Render (sin código).
+
 Detalle completo de cada hallazgo: volver a correr una verificación del PRD por secciones o leer `entrega/AUDITORIA.md`.
+
+## Flujo de trabajo (TBD)
+- Trunk-based: `main` siempre desplegable (Render despliega cada push). Ramas cortas `feat/…` o `fix/…` de horas, merge a `main` con tests en verde.
+- Versión entregada congelada: tag `entrega-2026-11-03` y rama `release/entrega-2026-11-03` (commit `0a5eaa6`). No se toca; la defensa puede mostrarse desde ahí.
 
 ## Antes de la defensa
 - Despertar: abrir `/api/health`. Reset: `curl -X POST https://reto-02-aguilar.onrender.com/api/reset -H "x-access-key: <ACCESS_KEY del README>"`
