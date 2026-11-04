@@ -1,12 +1,15 @@
 // Demo determinista sin LLM ni clave: procesa 001→006 llamando execute directo.
-import { rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { alertas, extraer, registrar, validar } from "./src/tools/contratos.ts";
 
 const HOY = "2026-09-03";
 const directory = process.cwd();
 const ctx = { directory, sessionId: "demo" };
-rmSync(resolve(directory, "out"), { recursive: true, force: true });
+// Conserva el directorio autorizado: el usuario no root del contenedor solo posee out/.
+const out = resolve(directory, "out");
+mkdirSync(out, { recursive: true });
+for (const nombre of readdirSync(out)) rmSync(resolve(out, nombre), { recursive: true, force: true });
 
 type Json = { ok: boolean; data?: Record<string, unknown>; error?: string; revision?: Array<{ campo: string; valor_propuesto: unknown; confianza: number; motivo: string }> };
 const parse = (s: string): Json => JSON.parse(s) as Json;

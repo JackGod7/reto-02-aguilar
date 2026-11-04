@@ -1,3 +1,5 @@
+> Actualización: este documento contiene la referencia operativa de la etapa AI SDK. La migración Node + LangGraph se define en ADR-004; los recuentos y mediciones históricos deben revalidarse. MemorySaver no proporciona recuperación ante reinicios ni acredita operación productiva.
+
 # RUNBOOK — Operar la demo en producción
 
 Servicio: https://reto-02-aguilar.onrender.com (Render Free, Docker, usuario no root). `ACCESS_KEY` está activa en el despliegue: las rutas `/api/*` (salvo `/api/health`) exigen la cabecera `x-access-key`, y sin ella `/api/reset` responde 403.

@@ -1,6 +1,12 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dirs } from "./rutas.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const contextoLog = new AsyncLocalStorage<{ sessionId: string; callId?: string }>();
+export function conContextoLog<T>(ctx: { sessionId: string; callId?: string }, fn: () => T): T {
+  return contextoLog.run(ctx, fn);
+}
 
 export interface EntradaHistorial {
   ts: string;
@@ -40,12 +46,12 @@ export function marcarProcesado(directory: string, id: string): void {
 
 export function escribirLog(
   directory: string,
-  e: { herramienta: string; mensaje_id: string | null; ok: boolean; resumen: string },
+  e: { herramienta: string; mensaje_id: string | null; ok: boolean; resumen: string; sessionId?: string; callId?: string },
 ): void {
   try {
     const { out } = dirs(directory);
     mkdirSync(out, { recursive: true });
-    appendFileSync(resolve(out, "log.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...e }) + "\n");
+    appendFileSync(resolve(out, "log.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...contextoLog.getStore(), ...e }) + "\n");
   } catch {
     // el log nunca debe romper una tool
   }

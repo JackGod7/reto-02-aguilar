@@ -1,6 +1,6 @@
 # ADR-002 — Arquitectura: monolito modular con puertos y adaptadores
 
-**Estado:** aceptada (implementada).
+**Estado:** monolito y separación de dominio conservados; decisiones de orquestación sustituidas por ADR-004. La tabla de alternativas describe la primera entrega, no prohíbe el LangGraph autorizado.
 
 ## Contexto
 Un solo equipo, un solo proceso, un maestro CSV, un LLM, despliegue en Render Free. Se necesita cambiar de proveedor LLM o de almacenamiento sin tocar las reglas de negocio, y poder probar el dominio sin modelo (`demo.ts` corre sin LLM).

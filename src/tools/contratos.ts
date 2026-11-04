@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
 import { calcularAlertas, renderAlertasMd } from "../domain/alertas.ts";
-import { aplicarOverride, overrideSchema } from "../domain/contrato.ts";
+import { aplicarOverride, idContratoSchema, overrideSchema } from "../domain/contrato.ts";
 import type { FilaMaestro } from "../domain/contrato.ts";
 import { extraerContrato } from "../domain/extraccion.ts";
 import type { Extraccion } from "../domain/extraccion.ts";
@@ -219,15 +219,15 @@ function resultadoRevision(a: Analisis, c: Contrato): Resultado {
   const campos = a.val.requiere_revision;
   const revision = campos.map((campo) => ({
     campo,
-    valor_propuesto: c.confianza[campo] === 0 ? null : (c as Record<string, unknown>)[campo] ?? null,
+    valor_propuesto: a.val.valores_revision?.[campo] ?? (c.confianza[campo] === 0 ? null : (c as Record<string, unknown>)[campo] ?? null),
     confianza: c.confianza[campo] ?? 0,
-    motivo: a.ext.motivos[campo] ?? "Requiere revisión",
+    motivo: a.val.motivos_revision?.[campo] ?? a.ext.motivos[campo] ?? "Requiere revisión",
   }));
   return rechazo(`requiere revisión: ${campos.join(", ")}`, `requiere revisión: ${campos.join(", ")}`, { revision });
 }
 
 const datosCompletos = (c: Contrato): boolean =>
-  /^[A-Z]{2}-\d{4}-\d{1,3}$/.test(c.id_contrato) && Boolean(c.cliente) && esFechaIso(c.fecha_inicio) && esFechaIso(c.fecha_fin);
+  idContratoSchema.safeParse(c.id_contrato).success && Boolean(c.cliente) && esFechaIso(c.fecha_inicio) && esFechaIso(c.fecha_fin);
 
 /** Archiva el adjunto de una actualización; un otrosí conserva su propio archivo numerado. Devuelve la ruta del maestro. */
 function archivarActualizacion(ctx: ToolContext, a: Analisis, previa: FilaMaestro, origen: string | null): string {
@@ -247,18 +247,15 @@ function archivarActualizacion(ctx: ToolContext, a: Analisis, previa: FilaMaestr
   return previa.ruta_sharepoint || `${carpeta}/${previa.id_contrato}-otrosi-${n}${ext}`;
 }
 
-function registrarActualizacion(ctx: ToolContext, a: Analisis, c: Contrato, idx: number, mensajeId: string, origen: string | null): string {
+function registrarActualizacion(ctx: ToolContext, a: Analisis, idx: number, mensajeId: string, origen: string | null): string {
   const previa = a.maestro[idx] as FilaMaestro;
   const ruta = archivarActualizacion(ctx, a, previa, origen);
-  a.maestro[idx] = {
-    ...previa,
-    cliente: c.cliente || previa.cliente,
-    nit_cliente: c.nit_cliente, pais: c.pais, objeto: a.ext.tipo === "otrosi" ? previa.objeto : c.objeto,
-    valor: String(c.valor), moneda: c.moneda, fecha_inicio: c.fecha_inicio, fecha_fin: c.fecha_fin,
-    requiere_poliza: String(c.requiere_poliza), tipo_poliza: c.tipo_poliza, estado_poliza: c.estado_poliza,
-    comercial: c.comercial || previa.comercial, ruta_sharepoint: ruta,
-  };
-  agregarHistorial(ctx.directory, { id_contrato: c.id_contrato, accion: "actualizacion", cambios: a.val.diferencias ?? {}, mensaje_id: mensajeId });
+  const siguiente = { ...previa, ruta_sharepoint: ruta };
+  for (const [campo, cambio] of Object.entries(a.val.diferencias ?? {})) {
+    if (campo in previa && campo !== "id_contrato") siguiente[campo as keyof FilaMaestro] = String(cambio.despues);
+  }
+  a.maestro[idx] = siguiente;
+  agregarHistorial(ctx.directory, { id_contrato: previa.id_contrato, accion: "actualizacion", cambios: a.val.diferencias ?? {}, mensaje_id: mensajeId });
   return ruta;
 }
 
@@ -296,14 +293,14 @@ function registrarSync(args: unknown, ctx: ToolContext): Resultado {
       resumen: "rechazado, sin escritura", ok: true,
     };
   }
-  if (val.clasificacion === "duplicado") {
+  if (val.requiere_revision.length > 0 && (p.confirmado !== true || val.bloqueo_registro)) return resultadoRevision(a, c);
+  if (val.clasificacion === "duplicado" || (val.clasificacion === "actualizacion" && Object.keys(val.diferencias ?? {}).length === 0)) {
     marcarProcesado(ctx.directory, p.mensaje_id);
     return {
-      respuesta: ok({ id_contrato: c.id_contrato, accion: "duplicado", ruta_archivo: null }),
+      respuesta: ok({ id_contrato: val.id_contrato_existente ?? c.id_contrato, accion: "duplicado", ruta_archivo: null }),
       resumen: `duplicado ${c.id_contrato}, sin escritura`, ok: true,
     };
   }
-  if (val.requiere_revision.length > 0 && p.confirmado !== true) return resultadoRevision(a, c);
   const ausentes = val.requiere_revision.filter((campo) => c.confianza[campo] === 0 && p.contrato?.[campo] === undefined);
   if (ausentes.length > 0) return rechazo(`datos incompletos: corrige los campos ausentes (${ausentes.join(", ")})`, "campos ausentes sin corregir");
   if (!datosCompletos(c)) return rechazo("datos incompletos: id_contrato, cliente y fechas son obligatorios", "datos incompletos");
@@ -312,7 +309,7 @@ function registrarSync(args: unknown, ctx: ToolContext): Resultado {
   const idx = val.id_contrato_existente ? maestro.findIndex((f) => f.id_contrato === val.id_contrato_existente) : -1;
   const esActualizacion = val.clasificacion === "actualizacion" && idx >= 0;
   const ruta = esActualizacion
-    ? registrarActualizacion(ctx, a, c, idx, p.mensaje_id, origen)
+    ? registrarActualizacion(ctx, a, idx, p.mensaje_id, origen)
     : registrarNuevo(ctx, a, c, p.mensaje_id, hoy, origen);
   if (ruta === null) return rechazo(`ya existe ${c.id_contrato} con otro NIT/objeto; revisión manual`, "conflicto de id");
 
@@ -320,7 +317,7 @@ function registrarSync(args: unknown, ctx: ToolContext): Resultado {
   marcarProcesado(ctx.directory, p.mensaje_id);
   const accion = esActualizacion ? "actualizacion" : "nuevo";
   return {
-    respuesta: ok({ id_contrato: c.id_contrato, accion, ruta_archivo: `out/sharepoint/${ruta}` }),
+    respuesta: ok({ id_contrato: val.id_contrato_existente ?? c.id_contrato, accion, ruta_archivo: `out/sharepoint/${ruta}` }),
     resumen: `${accion} ${c.id_contrato}`, ok: true,
   };
 }

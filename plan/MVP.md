@@ -1,3 +1,9 @@
+# Archivo histórico: plan MVP de la primera entrega
+
+Este documento conserva el plan original AI SDK. **No ejecutar sus prompts ni instalaciones.** Stack y dependencias vigentes: Node + LangGraph + LangChain, ADR-004. Fuente de tareas: [plan vigente](/Users/jackaguilar/reto-periferia-ia-integracion/plan/PLAN-ATOMICO.md). La autorización actual requiere revisión independiente y cierre del P0 de aprobación antes de integrar/publicar.
+
+## Texto histórico conservado
+
 # Plan MVP — 40 min (Haiku/Sonnet). Opus solo al final para revisar.
 
 ## Antes de lanzar sesiones (tú, 3 min, bloquea todo)

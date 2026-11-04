@@ -1,6 +1,6 @@
 # ADR-001 — Patrón agéntico: ReAct acotado + gate HITL en código
 
-**Estado:** aceptada (implementada; `toolApproval` nativo = evolución, no hecha).
+**Estado:** referencia histórica de la versión AI SDK. El motor vigente se define en [ADR-004](004-langgraph-orquestacion.md). Las mediciones de esta nota no son mediciones de LangGraph.
 
 ## Contexto
 Hay que registrar contratos desde correos. La siguiente acción depende de lo observado (¿hay campos con confianza < 0.8? ¿remitente no registrado? ¿duplicado?), y un valor mal registrado en el maestro es costoso. Restricción: ventana de 2 h, sin shell para el modelo.

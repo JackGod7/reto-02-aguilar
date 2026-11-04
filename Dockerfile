@@ -1,4 +1,6 @@
-FROM node:24-slim
+# Docker Official Image, indice multi-arquitectura consultado el 2026-11-04.
+# Registro: https://registry-1.docker.io/v2/library/node/manifests/24-slim
+FROM node:24.22.2-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
 
 WORKDIR /app
 

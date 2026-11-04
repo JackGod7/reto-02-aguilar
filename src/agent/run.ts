@@ -135,7 +135,7 @@ export interface RunResult {
   reply: string;
   toolCalls: ToolCallInfo[];
   needsConfirmation: NeedsConfirmation | null;
-  usage: { steps: number; tokens: number };
+  usage: { steps: number; tokens: number; known?: boolean };
 }
 
 /** Estado mutable de un turno; solo lo tocan las funciones de este módulo. */
@@ -164,7 +164,7 @@ function resolverPendiente(st: EstadoTurno, session: Session, mensajeId: string)
  */
 async function sondearRevision(o: RunOpts, st: EstadoTurno, validar: RespuestaTool, mensajeId: string): Promise<void> {
   const d = (validar.data ?? {}) as { requiere_revision?: unknown; clasificacion?: unknown };
-  const aplica = Array.isArray(d.requiere_revision) && d.requiere_revision.length > 0 && (d.clasificacion === "nuevo" || d.clasificacion === "actualizacion");
+  const aplica = Array.isArray(d.requiere_revision) && d.requiere_revision.length > 0 && (d.clasificacion === "nuevo" || d.clasificacion === "actualizacion" || d.clasificacion === "duplicado");
   if (!aplica) return;
   const run = o.runTool ?? ejecutarTool;
   const sonda = parse(await run("contratos_registrar", { mensaje_id: mensajeId }, { directory: o.directory, sessionId: o.session.id }));
@@ -213,6 +213,12 @@ function replyDeterminista(st: EstadoTurno, pending: NeedsConfirmation | null, t
 }
 
 export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
+  if (o.adapter.generarPaso) {
+    const { ejecutarTurnoGrafo } = await import("./graph.ts");
+    return ejecutarTurnoGrafo(o);
+  }
+  // Compatibilidad temporal para adaptadores anteriores inyectados en pruebas.
+  // El proveedor del servidor implementa generarPaso y usa siempre LangGraph.
   const { session, message } = o;
   const pend = mapaPend(session);
   const st: EstadoTurno = { pend, vistas: new Set(pend.keys()), toolCalls: [], nueva: null, llamadas: 0 };

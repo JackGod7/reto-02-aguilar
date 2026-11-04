@@ -8,6 +8,8 @@ export interface CampoRevision {
 }
 
 export interface NeedsConfirmation {
+  reviewId?: string;
+  operationHash?: string;
   mensaje_id: string;
   campos: CampoRevision[];
   pregunta: string;
@@ -33,12 +35,13 @@ export interface Session {
   messages: StoredMessage[];
   pending: NeedsConfirmation | null;
   tokens: number;
+  unreconciledTokens: number;
 }
 
 const sesiones = new Map<string, Session>();
 
 export function crearSesion(): Session {
-  const s: Session = { id: randomUUID(), messages: [], pending: null, tokens: 0 };
+  const s: Session = { id: randomUUID(), messages: [], pending: null, tokens: 0, unreconciledTokens: 0 };
   sesiones.set(s.id, s);
   return s;
 }

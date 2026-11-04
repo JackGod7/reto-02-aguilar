@@ -11,3 +11,7 @@ Las instrucciones del proyecto están en `CLAUDE.md` (válidas para cualquier ag
 5. **Puertas antes de cada commit**: `npx tsc --noEmit` limpio, `node --test 'tests/**/*.test.ts'` en verde, `node demo.ts` dos veces idéntico (borrando `out/`), fixtures sin cambios, sin claves en el diff.
 6. **Commits atómicos y TBD**: un commit por cambio lógico, mensaje convencional, sin atribución a asistentes; push a `main` (Render despliega) y comprobar `/api/health`.
 7. **Sin sobreingeniería**: si un pendiente no mejora lo que el evaluador ve o un criterio del PRD, se documenta como roadmap en vez de construirse.
+
+## Continuidad entre clientes
+
+Leer [plan/INICIO-AGENTES.md](plan/INICIO-AGENTES.md). Estado y decisiones viven en archivos y Git; los nombres de agentes anteriores no son handles portables entre herramientas.

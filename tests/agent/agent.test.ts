@@ -127,7 +127,7 @@ test("mensaje >2000 → 400; sessionId inventado → 404; vacío → 400", async
 test("health no depende del LLM; ACCESS_KEY y rate limit", async () => {
   await conServidor(lote, async (base) => {
     const h: unknown = await (await fetch(`${base}/api/health`)).json();
-    assert.deepEqual(h, { ok: true, provider: "mock", model: "mock-1" });
+    assert.deepEqual(h, { ok: true, provider: "mock", model: "mock-1", buildSha: "desconocido", persistence: "process", tracing: false });
     assert.equal((await post(base, { message: "hola" })).status, 401);
     assert.equal((await post(base, { message: "hola" }, { "x-access-key": "k" })).status, 200);
     assert.equal((await fetch(`${base}/api/health`)).status, 200);

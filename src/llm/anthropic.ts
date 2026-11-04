@@ -1,31 +1,120 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, stepCountIs, tool } from "ai";
-import type { LLMAdapter, Herramienta, Mensaje, OpcionesLLM, RespuestaLLM } from "./adapter.ts";
+import { traceable } from "langsmith/traceable";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "@langchain/core/messages";
+import type { z } from "zod";
+import type { LLMAdapter, Herramienta, MensajePaso, OpcionesPasoLLM, PasoLLM } from "./adapter.ts";
 
-export function crearAnthropicAdapter(env: NodeJS.ProcessEnv = process.env): LLMAdapter {
+interface EsquemaHerramienta {
+  name: string;
+  description: string;
+  schema: z.ZodType;
+}
+
+export interface ModeloAnthropicPaso {
+  bindTools(herramientas: EsquemaHerramienta[]): {
+    invoke(mensajes: BaseMessage[], opciones: { signal: AbortSignal; callbacks: [] }): Promise<AIMessage>;
+  };
+}
+
+export type FactoriaAnthropic = (config: ConstructorParameters<typeof ChatAnthropic>[0]) => ModeloAnthropicPaso;
+
+function positivo(valor: string | undefined, defecto: number): number {
+  if (valor === undefined || valor === "") return defecto;
+  const numero = Number(valor);
+  if (!Number.isSafeInteger(numero) || numero <= 0) throw new Error("Configuración LLM inválida: se requiere un entero positivo");
+  return numero;
+}
+
+function historial(mensajes: MensajePaso[], system?: string): BaseMessage[] {
+  const resultado: BaseMessage[] = system ? [new SystemMessage(system)] : [];
+  for (const mensaje of mensajes) {
+    if (mensaje.role === "user") resultado.push(new HumanMessage(mensaje.content));
+    else if (mensaje.role === "tool") {
+      if (!mensaje.toolCallId) throw new Error("Resultado de herramienta sin identificador");
+      resultado.push(new ToolMessage({ content: mensaje.content, tool_call_id: mensaje.toolCallId }));
+    } else {
+      resultado.push(new AIMessage({
+        content: mensaje.content,
+        tool_calls: mensaje.toolCalls?.map((llamada) => {
+          const args = llamada.args && typeof llamada.args === "object" && !Array.isArray(llamada.args)
+            ? llamada.args as Record<string, unknown>
+            : { _argumentos_invalidos: true };
+          return { id: llamada.id, name: llamada.name, args, type: "tool_call" as const };
+        }),
+      }));
+    }
+  }
+  return resultado;
+}
+
+/** Solo transporte modelo<->mensajes. El grafo conserva el control de herramientas y topes. */
+export function crearAnthropicAdapter(
+  env: NodeJS.ProcessEnv = process.env,
+  crearModelo: FactoriaAnthropic = (config) => new ChatAnthropic(config),
+): LLMAdapter {
   const model = env.LLM_MODEL || "claude-haiku-5-5";
   const apiKey = env.ANTHROPIC_API_KEY;
-  const provider = createAnthropic({ apiKey });
+  const timeoutMs = positivo(env.LLM_TIMEOUT_MS, 60_000);
+  const maxTokens = positivo(env.LLM_MAX_OUTPUT_TOKENS, 4096);
+
+  async function generarPaso(mensajes: MensajePaso[], herramientas: Herramienta[], opciones: OpcionesPasoLLM): Promise<PasoLLM> {
+    if (!apiKey) throw new Error("LLM no configurado: falta ANTHROPIC_API_KEY");
+    const maxSalida = opciones.maxOutputTokens ?? maxTokens;
+    if (!Number.isSafeInteger(maxSalida) || maxSalida <= 0) throw new Error("Tope de salida LLM inválido");
+    const signal = opciones.signal
+      ? AbortSignal.any([opciones.signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs);
+    const mensajesModelo = historial(mensajes, opciones.system);
+    try {
+      signal.throwIfAborted();
+      // Contexto local: ignora incluso tracing heredado del proceso o del llamador.
+      const respuesta = await traceable(async () => {
+        const modelo = crearModelo({ model, apiKey, maxTokens: Math.min(maxSalida, maxTokens), maxRetries: 0, clientOptions: { timeout: timeoutMs, maxRetries: 0 } });
+        return modelo.bindTools(herramientas.map((h) => ({
+          name: h.name, description: h.description, schema: h.inputSchema,
+        }))).invoke(mensajesModelo, { signal, callbacks: [] });
+      }, { name: "llm-paso", tracingEnabled: false })();
+      const validas = respuesta.tool_calls ?? [];
+      const invalidas = respuesta.invalid_tool_calls ?? [];
+      const ids = new Set([...validas, ...invalidas].map((llamada) => llamada.id).filter(Boolean));
+      function idIntento(id: string | undefined, indice: number): string {
+        if (id) return id;
+        let sintetico = `invalid-tool-call-${indice}`;
+        while (ids.has(sintetico)) sintetico += "-invalid";
+        ids.add(sintetico);
+        return sintetico;
+      }
+      // Conservar intentos malformados y su uso para que el grafo los rechace y audite.
+      // Una llamada sin ID jamás puede convertirse en una ejecución válida.
+      const llamadas = [
+        ...validas.map((llamada, indice) => ({
+          id: idIntento(llamada.id, indice), name: llamada.name || "herramienta_invalida",
+          args: llamada.id && llamada.name ? llamada.args : null,
+        })),
+        ...invalidas.map((llamada, indice) => ({
+          id: idIntento(llamada.id, validas.length + indice), name: llamada.name || "herramienta_invalida",
+          args: llamada.args ?? null,
+        })),
+      ];
+      const texto = typeof respuesta.content === "string" ? respuesta.content : respuesta.content
+        .filter((bloque) => bloque.type === "text" && typeof bloque.text === "string")
+        .map((bloque) => bloque.text).join("");
+      const total = respuesta.usage_metadata?.total_tokens;
+      const usoConocido = typeof total === "number" && Number.isSafeInteger(total) && total >= 0;
+      return { texto, llamadas, tokens: usoConocido ? total : 0, usoConocido };
+    } catch {
+      // Los errores del SDK pueden incluir cabeceras o contenido privado; no se propagan.
+      throw new Error(signal.aborted ? "La solicitud al proveedor LLM fue cancelada o agotó su tiempo" : "No se pudo completar la solicitud al proveedor LLM");
+    }
+  }
+
   return {
-    provider: "anthropic",
-    model,
-    async enviar(mensajes: Mensaje[], herramientas: Herramienta[], opciones: OpcionesLLM): Promise<RespuestaLLM> {
-      if (!apiKey) throw new Error("LLM no configurado: falta ANTHROPIC_API_KEY");
-      const tools = Object.fromEntries(
-        herramientas.map((h) => [
-          h.name,
-          tool({ description: h.description, inputSchema: h.inputSchema, execute: (args: unknown) => h.execute(args) }),
-        ]),
-      );
-      const r = await generateText({
-        model: provider(model),
-        system: opciones.system,
-        messages: mensajes,
-        tools,
-        stopWhen: stepCountIs(opciones.maxPasos),
-        timeout: { totalMs: 60_000 },
-      });
-      return { texto: r.text, pasos: r.steps.length, tokens: r.usage.totalTokens ?? 0 };
+    provider: "anthropic", model, generarPaso,
+    async enviar(mensajes, herramientas, opciones) {
+      if (!Number.isSafeInteger(opciones.maxPasos) || opciones.maxPasos <= 0) throw new Error("Tope de pasos LLM inválido");
+      const respuesta = await generarPaso(mensajes, herramientas, { system: opciones.system });
+      return { texto: respuesta.texto, pasos: 1, tokens: respuesta.tokens };
     },
   };
 }

@@ -30,9 +30,10 @@ export type Contrato = z.infer<typeof contratoSchema>;
 
 // Overrides permitidos (solo campos de dato; nunca la confianza).
 const fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export const idContratoSchema = z.string().regex(/^(?:[A-Z]{2}-\d{4}-\d{1,3}|AUTO-\d{4}-\d{3,})$/);
 export const overrideSchema = z
   .object({
-    id_contrato: z.string().regex(/^[A-Z]{2}-\d{4}-\d{1,3}$/),
+    id_contrato: idContratoSchema,
     cliente: z.string().max(200),
     nit_cliente: z.string().regex(/^\d{5,20}$/),
     pais: z.enum(["CO", "EC", "PE", "PA", "HN"]),
