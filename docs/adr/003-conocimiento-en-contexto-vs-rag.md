@@ -1,12 +1,12 @@
 # ADR-003 — Conocimiento del proceso en el contexto vs RAG vectorial
 
-**Estado:** aceptada e implementada. `src/agent/context.ts` (`buildSystemPrompt`) une `agent/prompt.md` y `src/knowledge/registro-contratos.md` (~5 KB) en el system prompt; `src/server.ts` lo usa al arrancar. Test: `tests/core/context.test.ts`.
+**Estado:** aceptada (implementada). `buildSystemPrompt` en `src/agent/context.ts` une `agent/prompt.md` y `src/knowledge/registro-contratos.md` (~5 KB) en el system prompt, y `src/server.ts` lo usa al arrancar. Test: `tests/core/context.test.ts`.
 
 ## Contexto
 El agente necesita conocer el proceso de registro (reglas, campos, criterios de revisión, excepciones). El corpus actual es de ~1 página.
 
 ## Decisión
-**Inyectar el documento completo en el contexto del agente** (system prompt o mensaje fijo, con cache de prompt si el proveedor lo permite). No usar embeddings ni índice vectorial.
+**Inyectar el documento completo en el system prompt del agente.** El caché de prompt es una mejora posible, no implementada. No usar embeddings ni índice vectorial.
 Las reglas que *deben* cumplirse (umbral 0.8, RN1–RN4) siguen en código; el documento da contexto al modelo, no autoridad.
 
 ## Alternativas descartadas
@@ -20,5 +20,5 @@ Razones: tamaño (el corpus completo son pocos miles de tokens), determinismo (e
 
 ## Consecuencias
 - (+) Simple, reproducible, fácil de auditar con un diff.
-- (−) Cada llamada paga esos tokens; mitigable con cache de prompt (hipótesis, sin medir).
+- (−) Cada llamada paga esos tokens; mitigable con caché de prompt (no implementado; hipótesis, sin medir).
 - **Disparadores para migrar a RAG** (umbrales a calibrar, no medidos): corpus de más de ~N páginas que ya no quepa cómodo en el contexto (N depende del modelo y del costo aceptado); varios procesos con documentos distintos donde cargar todo diluya la atención; necesidad de consultar contratos históricos o cláusulas. Al migrar, medir antes y después con los casos del fixture.

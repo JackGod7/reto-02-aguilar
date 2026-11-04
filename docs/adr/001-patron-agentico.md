@@ -8,7 +8,7 @@ Hay que registrar contratos desde correos. La siguiente acción depende de lo ob
 ## Decisión
 Un solo agente **ReAct acotado** (Vercel AI SDK, `stopWhen: stepCountIs(25)`) con 5 tools `contratos_*` (zod) y estas reglas:
 - Las tools se direccionan por `mensaje_id`: el modelo elige *qué* mensaje, no *qué valor*; la extracción es determinista, con confianza por campo.
-- **Gate HITL en código**: `contratos_registrar` se detiene si hay campos bajo el umbral 0.8 y devuelve `revision[]`; solo pasa con `confirmado: true` ligado a una revisión pendiente de esa sesión. El modelo no puede auto-aprobarse.
+- **Gate HITL en código**: `contratos_registrar` se detiene si hay campos bajo el umbral 0.8 y devuelve `revision[]`; solo pasa con `confirmado: true` si esa revisión (mismo `mensaje_id`) la persona la vio en un turno previo y confirma en su último mensaje; con varias pendientes, el texto nombra el `mensaje_id`. El override `contrato` se limita a campos en revisión. El modelo no puede auto-aprobarse. Tests: `tests/core/gate-adversarial.test.ts`.
 - **Gates deterministas** (RN1–RN4, umbral): `contratos_validar` actúa como juez programático.
 
 Labs DevTalles usados: 01 (tool use, tope de pasos), 03 (juez programático), 04 (ReAct), 05 (gate de código: "garantiza, no mejora"), 11 (HITL: importa *cuándo* pausar).
@@ -24,6 +24,7 @@ Labs DevTalles usados: 01 (tool use, tope de pasos), 03 (juez programático), 04
 
 ## Consecuencias
 - (+) Comportamiento auditable; el peor caso lo acotan los topes (25 pasos, tokens por sesión).
-- (+) Medido en corrida real: 53.358 tokens por lote de 6 correos (Haiku 5.5, 2026-11-03).
+- (+) Medido en una sola corrida real, sin desglose entrada/salida: 53.358 tokens por lote de 6 correos (Haiku 5.5, 2026-11-03).
+- (−) La confirmación se detecta por texto ("confirmo", "sí"): es una heurística, no un evento explícito.
 - (−) Un agente único: si crecen los tipos de documento, habrá que revisar este ADR.
 - **Siguiente paso:** migrar el gate al `toolApproval` nativo del SDK. La regla ya es código; el cambio sería de integración. No está hecho.

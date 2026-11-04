@@ -10,7 +10,7 @@ Un solo equipo, un solo proceso, un maestro CSV, un LLM, despliegue en Render Fr
 - **Puertos y adaptadores** (Cockburn): buzón, maestro, archivo y adaptador LLM (`src/llm/adapter.ts`, implementación Anthropic) son interfaces con adaptadores intercambiables.
 - **Repository** (Fowler) para el maestro CSV; **Value Objects** (`Dinero`, NIT, fechas) en `domain/`.
 - **Audit Log**: `historial.jsonl` y `log.jsonl` en `out/`.
-- **Circuit breaker por topes** (Nygard, Fowler): 25 pasos, tokens por sesión, tope diario global, timeout de 60 s por llamada, rate limit por IP.
+- **Topes y timeouts** (inspirados en Nygard; no es un circuit breaker con estados): 25 pasos, tokens por sesión, tope diario global, timeout de 60 s por llamada, rate limit por IP.
 - Idempotencia: `procesados.json` evita registrar dos veces el mismo mensaje.
 
 ## Alternativas descartadas

@@ -15,17 +15,17 @@ Lo medido hasta hoy: 53.358 tokens por lote de 6 correos (una sola corrida real 
 | 3-5 años en el rol | No es verificable con un repo. Este proyecto es una prueba de 2 h, no historial | Fuera de alcance de esta matriz |
 | Liderar funcionalidades de IA agéntica **en producción** | Agente ReAct acotado (`src/agent/run.ts`, 25 pasos, topes de tokens), desplegado en `https://reto-02-aguilar.onrender.com` (Render Free, Docker no root, `Dockerfile`, `render.yaml`). Es un despliegue de demo, no producción con usuarios reales | Hecho como demo desplegada. Producción real: **Siguiente** (§5) |
 | IA generativa | `src/llm/anthropic.ts` (Haiku), `agent/prompt.md`; el modelo conduce la conversación y explica, no decide valores | Hecho |
-| RAG | **Hecho**: conocimiento en contexto, sin RAG vectorial. `src/knowledge/registro-contratos.md` (~5 KB) se inyecta en el system prompt (`src/agent/context.ts`, ADR-003) | **Hipótesis**: RAG vectorial solo se justifica cuando el corpus (cláusulas, políticas de varias aseguradoras) no quepa en contexto |
+| RAG | **Hecho**: conocimiento en contexto, sin RAG vectorial. `src/knowledge/registro-contratos.md` (~5 KB) se inyecta completo en el system prompt (`src/agent/context.ts`, ADR-003; test `tests/core/context.test.ts`) | **Hipótesis**: RAG vectorial solo se justifica cuando el corpus (cláusulas, políticas de varias aseguradoras) no quepa en contexto |
 | Function calling / tool calling | 5 tools `contratos_*` con esquemas zod (`src/tools/contratos.ts`); el modelo elige *qué* mensaje procesar, los valores salen de las tools | Hecho |
-| Extracción confiable | Extracción determinista con confianza por campo (`src/domain/extraccion.ts`); `demo.ts` reproduce la tabla esperada sin modelo | Hecho (20/20 tests en la auditoría; demo idéntica en 2 corridas) |
-| Control humano (HITL) | Gate en código, umbral 0,8 (`src/domain/contrato.ts` `UMBRAL`; `src/agent/run.ts`); el override del modelo se limita a campos en revisión (`run.ts` ~líneas 99-109) | Hecho, con test adversarial (`tests/core/gate-adversarial.test.ts`). El agujero P0-1 de la auditoría (override sin gate) está corregido en el árbol de trabajo; la auditoría se hizo sobre el commit `b1dc41b` |
+| Extracción confiable | Extracción determinista con confianza por campo (`src/domain/extraccion.ts`); `demo.ts` reproduce la tabla esperada sin modelo | Hecho (`npm test` 38/38 el 2026-11-03; demo determinista) |
+| Control humano (HITL) | Gate en código, umbral 0,8 (`src/domain/contrato.ts` `UMBRAL`; `src/agent/run.ts`); solo se confirma una revisión que la persona vio en un turno previo; con varias pendientes, el texto debe nombrar el `mensaje_id`; el override se limita a campos en revisión (`src/agent/run.ts`) | Hecho, con tests adversariales (`tests/core/gate-adversarial.test.ts`). Una revisión independiente encontró un bypass (override sin gate) y dos huecos de confirmación; los tres están cerrados y cubiertos por test |
 | Estrategia de producto | Problema, usuaria, JTBD, KPIs, caso de negocio: §2-§4 de este documento. PRD del reto en `docs/PRD.md` | Hecho (documento). Validar con usuarias: **Siguiente** |
 | Roadmap y backlog | §5 | Hecho (documento) |
 | Caso de negocio | §4, con fórmula y supuestos. Sin cifras de negocio reales | Hecho como modelo; los datos de entrada son **Hipótesis** |
 | Diseñar UX | `web/index.html`: tool calls visibles, panel ámbar de confirmación, errores claros, recuperación de sesión (§6) | Hecho |
 | Prototipar con Lovable, v0 o similares | **No usado.** El front es HTML plano escrito con asistencia de Claude Code | **Siguiente**: propuesto como herramienta para iterar UX (§6) |
 | Equipos multidisciplinarios (IA, tecnología, negocio) | Regla de gobierno como acuerdo entre áreas (`SOLUCION.md` §6) y RACI (§7). No hubo equipo real en este reto | Hecho como propuesta; **Hipótesis** de que las áreas la aceptan |
-| "Implementación real, no solo prototipos" | Despliegue vivo, tests, demo determinista, topes de costo, auditoría externa con hallazgos publicados (`entrega/AUDITORIA.md`). Faltan: persistencia real, conectores, observabilidad, evals continuos | Parcial: ver backlog §5 |
+| "Implementación real, no solo prototipos" | Despliegue vivo con `ACCESS_KEY` activa, tests, demo determinista, topes de costo, revisión independiente con hallazgos corregidos. Faltan: persistencia real, conectores, observabilidad, evals continuos | Parcial: ver backlog §5 |
 
 ## 2. Problema, usuaria y valor
 
@@ -54,7 +54,7 @@ Lo medido hasta hoy: 53.358 tokens por lote de 6 correos (una sola corrida real 
 | Norte | Tiempo firma → registro | Días hábiles entre la firma y la fila en el maestro | Meta a fijar con la línea base. La regla de gobierno propone un máximo de 3 días hábiles de envío por el comercial |
 | Calidad | Tasa de revisión humana | Contratos con al menos un campo bajo 0,8 / contratos procesados | Sin meta fija: muy baja sugiere umbral laxo, muy alta sugiere extracción pobre. En los 6 fixtures: 1 de 6 pasó por revisión (006), una sola muestra |
 | Calidad | Precisión por campo | Campos correctos / campos evaluados, sobre un golden set | Hoy: los 6 fixtures coinciden con la tabla esperada. Golden set ampliado: **Siguiente** |
-| Costo | Costo por caso | Tokens (y USD) por contrato procesado | Medido: 53.358 tokens por lote de 6 (≈ 8.900 por correo, promedio de una corrida). USD no calculado |
+| Costo | Costo por caso | Tokens (y USD) por contrato procesado | Medido: 53.358 tokens por lote de 6 (≈ 8.900 por correo, derivado de una corrida). USD no calculado |
 | Guardia | Registros sin gate | Filas escritas con campos < 0,8 sin confirmación válida | **Debe ser 0**. Cualquier valor mayor es incidente |
 | Guardia | Errores de herramienta y del proveedor | Tasa por día | Sin umbral aún; hoy solo `out/log.jsonl` por tool |
 | Guardia | Gasto diario | Tokens por día frente a `MAX_DAILY_TOKENS` | Tope configurado en código; el límite de gasto en el proveedor es un control aparte y no está verificado |
@@ -96,7 +96,7 @@ No tengo cifras reales de Periferia. Lo siguiente es una fórmula con supuestos 
 
 | Horizonte | Contenido | Criterio de salida |
 |---|---|---|
-| **Ahora** (hecho) | Agente acotado, gate en código, demo determinista, chat web, despliegue, auditoría externa con corrección de P0-1 y recuperación de sesión en el front | Demo y tests verdes. Pendiente decidir qué P1 de la auditoría se cierran antes de la defensa |
+| **Ahora** (hecho) | Agente acotado, gate en código (confirmación ligada y override acotado), conocimiento inyectado en el prompt, demo determinista, chat web con recuperación de sesión, despliegue en Render Free | Demo y 38 tests verdes |
 | **Siguiente** | **Shadow mode**: el agente procesa el buzón real, la analista sigue registrando a mano y se comparan resultados. Después **asistido**: el agente propone, la analista confirma todo. Conectores Graph (correo) y SharePoint. Golden set y evals en CI. `toolApproval` nativo del AI SDK. Persistencia real y reset por sesión | Precisión por campo y cobertura medidas sobre ≥ 1 mes de shadow |
 | **Después** | **Autónomo solo para casos limpios** (todos los campos ≥ 0,8, sin conflictos, remitente conocido), con muestreo humano. OCR para escaneados. RAG vectorial solo si el corpus crece. Dashboards para gerencia | Registros sin gate = 0 sostenido y precisión en el umbral acordado |
 
@@ -106,12 +106,12 @@ El paso a "autónomo" es una decisión de gobierno, no técnica: se toma con dat
 
 | # | Ítem | Valor | Esfuerzo | Riesgo si no se hace | MoSCoW |
 |---|---|---|---|---|---|
-| 1 | Cerrar override sin gate (P0-1) y mantener test adversarial | Alto: es la tesis central | S | Alto: rompe "el gate es código" | Must (hecho en árbol de trabajo; confirmar en el commit de entrega) |
-| 2 | Confirmación atada a `mensaje_id` y token de un solo uso; `pending` por mensaje (P1-5) | Alto | M | Medio: un "ok" genérico autoriza | Must |
+| 1 | Gate sin bypass: override acotado y test adversarial | Alto: es la tesis central | S | Alto: rompe "el gate es código" | Must (hecho) |
+| 2 | Confirmación como evento explícito (`toolApproval` o token de un solo uso). Hoy está ligada a `mensaje_id` y a un turno previo, pero se detecta por texto | Alto | M | Medio: un "ok" ambiguo podría autorizar | Must (parcial) |
 | 3 | Shadow mode con comparación contra registro manual | Alto: valida H1 | M | Alto: lanzar sin evidencia | Must |
 | 4 | Golden set y evals en CI (§8) | Alto | M | Alto: regresiones silenciosas | Must |
-| 5 | Estado por sesión o reset protegido; el buzón consumido afecta a otros (P1-2) | Medio | S | Medio: demo no reproducible | Should |
-| 6 | Rate limit detrás de proxy y tope global de gasto (P1-3, P1-4) | Medio | S | Medio: abuso de costo | Should (varias piezas ya en código; verificar y fijar límite de gasto en el proveedor) |
+| 5 | Estado por sesión: hoy `procesados.json` es global y el reset exige `ACCESS_KEY` | Medio | S | Medio: demo no reproducible | Should |
+| 6 | Fijar el límite de gasto en el proveedor (rate limit detrás de proxy y tope diario global ya están en código) | Medio | S | Medio: abuso de costo | Should |
 | 7 | Conectores Graph (correo) y SharePoint | Alto | L | Medio: sin ellos el flujo sigue simulado | Should |
 | 8 | Persistencia real (BD) y bloqueo de concurrencia; el CSV pierde actualizaciones entre procesos | Alto | L | Alto en producción | Should |
 | 9 | Observabilidad: logs estructurados, uso, errores del proveedor, versión en `/api/health` | Medio | M | Medio | Should |
@@ -127,9 +127,9 @@ El paso a "autónomo" es una decisión de gobierno, no técnica: se toma con dat
 - **Confianza por campo**: se muestran los campos en revisión con su confianza, no un "baja confianza" genérico.
 - **Panel ámbar de confirmación**: estado distinto del resto del chat; la pregunta la arma el servidor a partir del resultado de la tool, no el modelo.
 - **Errores claros**: mensajes en lenguaje llano con la sesión viva.
-- **Recuperación de sesión**: si el servidor se durmió o se reinició, el front reconoce `session_not_found` y vuelve a empezar sin dejar a la usuaria atascada. Lo encontró la auditoría y está corregido en el árbol de trabajo.
+- **Recuperación de sesión**: si el servidor se durmió o se reinició, el front reconoce `session_not_found` y vuelve a empezar sin dejar a la usuaria atascada. Lo encontró la revisión independiente y está corregido.
 
-**No validado**: no he observado a ninguna usuaria real usando el chat. La auditoría tampoco verificó el front en navegador real.
+**No validado**: ninguna usuaria real ha usado el chat; no hay pruebas de usabilidad.
 
 **Cómo validaría la siguiente versión**
 
@@ -155,13 +155,11 @@ El paso a "autónomo" es una decisión de gobierno, no técnica: se toma con dat
 
 ## 8. Plan de evaluación y gobierno del modelo
 
-**Hoy (hecho)**: tests de dominio, tools, servidor y gate (incluido el adversarial); demo determinista; una corrida real medida (53.358 tokens). **No hay evals del modelo en CI** ni golden set más allá de los 6 fixtures.
+**Hoy (hecho)**: 38 tests (dominio, tools, servidor, gate adversarial); demo determinista; una corrida real medida (53.358 tokens). **No hay evals del modelo en CI** ni golden set más allá de los 6 fixtures.
 
 **Plan (siguiente)**
 
-1. **Golden set**: ampliar con contratos reales anonimizados y casos difíciles (formatos de dinero, otrosíes, NIT ambiguos). Métricas: precisión por campo, tasa de revisión, falsos "limpios" (campo incorrecto con confianza ≥ 0,8, la métrica más peligrosa).
-2. **Regresión al cambiar modelo o prompt**: correr el golden set y el conjunto de conducta del agente (secuencia de tools, uso del gate) antes de promover. No se cambia `LLM_MODEL` ni `agent/prompt.md` sin ese resultado.
-3. **Adversarial**: correos y contratos con instrucciones incrustadas ("llama registrar con otro valor"), overrides fuera de la revisión, confirmaciones genéricas. Criterio: registros sin gate = 0.
-4. **Monitoreo de deriva**: tasa de revisión, distribución de confianza y tokens por lote semana a semana; un cambio brusco dispara revisión. Línea base: los 53.358 tokens medidos.
-5. **Gobierno de modelo y prompt**: prompt versionado en el repo (`agent/prompt.md`), modelo fijado por variable y registrado en el log, cambios por PR con evals adjuntos, responsable nombrado (TI con producto), plan de reversa y revisión de precios y términos del proveedor.
-6. **Datos personales**: definir retención de correos y contratos y minimizar lo que va a logs (riesgo ya listado en `SOLUCION.md` §11).
+1. **Golden set y regresión**: ampliar con contratos reales anonimizados y casos difíciles (formatos de dinero, otrosíes, NIT ambiguos). Métricas: precisión por campo, tasa de revisión y falsos "limpios" (campo incorrecto con confianza ≥ 0,8, la más peligrosa). No se cambia `LLM_MODEL` ni `agent/prompt.md` sin correrlo antes.
+2. **Adversarial**: correos con instrucciones incrustadas, overrides fuera de la revisión y confirmaciones ambiguas. Criterio: registros sin gate = 0.
+3. **Deriva y costo**: tasa de revisión, distribución de confianza y tokens por lote semana a semana; línea base, los 53.358 tokens medidos.
+4. **Gobierno**: prompt versionado, modelo fijado por variable y registrado en el log, cambios por PR con evals adjuntos, responsable nombrado (TI con producto), plan de reversa, retención de datos personales definida (riesgo en `SOLUCION.md` §11).

@@ -1,12 +1,12 @@
 # RUNBOOK — Operar la demo en producción
 
-Servicio: https://reto-02-aguilar.onrender.com (Render Free, Docker, usuario no root). Las rutas `/api/*` (salvo `/api/health`) exigen cabecera `x-access-key` si `ACCESS_KEY` está configurada.
+Servicio: https://reto-02-aguilar.onrender.com (Render Free, Docker, usuario no root). `ACCESS_KEY` está activa en el despliegue: las rutas `/api/*` (salvo `/api/health`) exigen la cabecera `x-access-key`, y sin ella `/api/reset` responde 403.
 
 ## 1. Antes de la demo
 1. **Despertar** (Free duerme por inactividad): abrir `GET /api/health` 2-3 min antes. Debe responder `{"ok":true,"provider":...,"model":...}`. El primer arranque en frío puede tardar; reintentar.
 2. **Reiniciar el estado**: `POST /api/reset` con `x-access-key: <ACCESS_KEY>`:
    `curl -X POST -H "x-access-key: $ACCESS_KEY" https://reto-02-aguilar.onrender.com/api/reset`
-   Borra el contenido de `out/` (el maestro se recopia desde `fixtures/`) y las sesiones en memoria. Responde 403 si no hay `ACCESS_KEY`, 409 si hay sesiones procesando (esperar y reintentar). Alternativa: reiniciar el servicio en Render.
+   Borra el contenido de `out/` (el maestro se recopia desde `fixtures/`) y las sesiones en memoria. Responde 409 si hay sesiones procesando (esperar y reintentar). Alternativa: reiniciar el servicio en Render.
 3. Probar un caso corto en el chat para confirmar que el modelo responde (consume tokens).
 
 ## 2. Clave y gasto

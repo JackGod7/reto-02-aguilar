@@ -1,12 +1,12 @@
 # Registro de Contratos Vigentes — agente de chat
 
-Agente conversacional que lee el buzón de contratos, extrae los datos, valida contra el maestro, registra lo que puede y pide confirmación humana para lo dudoso. Detalle de decisiones en [SOLUCION.md](SOLUCION.md).
+Agente conversacional que lee el buzón de contratos, extrae los datos, valida contra el maestro, registra lo que puede y pide confirmación humana para lo dudoso. Solución y decisiones en [SOLUCION.md](SOLUCION.md); estrategia de producto, roadmap y caso de negocio en [docs/PRODUCTO.md](docs/PRODUCTO.md).
 
 ## Link de prueba
 
 - Chat: `https://reto-02-aguilar.onrender.com`
 - Salud del servicio: `https://reto-02-aguilar.onrender.com/api/health`
-- Clave de acceso: si el servidor tiene `ACCESS_KEY` configurada, la pantalla la pide. Valor: se entrega por el hilo de correo.
+- Clave de acceso: si el servidor tiene `ACCESS_KEY` configurada, la pantalla la pide. La instancia desplegada la tiene activa; el valor se entrega por el hilo de correo.
 
 ## Requisitos
 
@@ -44,7 +44,7 @@ node demo.ts
 
 Procesa los 6 mensajes del buzón llamando a las herramientas directamente, sin modelo ni clave. Deja la salida en `out/` y muestra una tabla por mensaje. El mensaje 006 queda sin registrar hasta una segunda pasada con confirmación.
 
-Pruebas:
+Pruebas (38/38 el 2026-11-03):
 
 ```bash
 npm test
@@ -68,9 +68,10 @@ Antes de una demo conviene llamar a `/api/reset` (con `x-access-key`) para parti
 ## Estructura
 
 - `agent/prompt.md`: comportamiento del agente.
-- `src/knowledge/registro-contratos.md`: reglas de negocio y gobierno del proceso.
+- `src/knowledge/registro-contratos.md`: reglas de negocio y gobierno del proceso (se inyecta en el system prompt).
 - `src/tools/`: herramientas `contratos_*`.
 - `src/domain/`, `src/infra/`: lógica de extracción, validación y archivos.
+- `docs/`: `PRODUCTO.md` (estrategia, roadmap, backlog, caso de negocio, UX), `adr/` (decisiones de arquitectura), `RUNBOOK.md` (operación).
 - `web/`: interfaz de chat.
 - `modulo/`: agente empaquetado como módulo reutilizable (bonus), generado con `npm run build:modulo`.
 - `fixtures/`: datos de entrada, solo lectura.

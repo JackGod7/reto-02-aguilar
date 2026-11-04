@@ -1,5 +1,7 @@
 # SOLUCION — Registro de Contratos Vigentes
 
+Estrategia de producto, roadmap, backlog y caso de negocio: [`docs/PRODUCTO.md`](docs/PRODUCTO.md). Decisiones de arquitectura: [`docs/adr/`](docs/adr/). Operación: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
 ## 1. Problema
 
 El maestro de contratos vigentes está congelado desde el corte de 2026-05-30: los contratos nuevos no se registran y no se sabe qué vence ni qué pólizas faltan. Le duele a la analista administrativa, dueña del maestro, y a gerencia, que no tiene visibilidad de vencimientos ni de garantías pendientes.
@@ -15,7 +17,7 @@ Servidor node:http (src/server.ts)
    ▼
 Agente (src/agent/)  ── system prompt: agent/prompt.md
    │  bucle de herramientas (AI SDK) · tope de 25 pasos · tope de tokens · timeout
-   │  conocimiento: src/knowledge/registro-contratos.md
+   │  conocimiento inyectado en el system prompt: src/knowledge/registro-contratos.md
    ▼
 Herramientas contratos_* (src/tools/contratos.ts)
    │  leer_buzon · extraer · validar · registrar · alertas
@@ -25,7 +27,7 @@ Dominio e infraestructura (src/domain/, src/infra/)
    └── escritura: out/ (maestro CSV, archivos de contratos, historial, procesados, log, alertas)
 ```
 
-- **Dónde vive cada cosa**: el comportamiento del agente está en `agent/prompt.md`. Las reglas de negocio están en `src/knowledge/` y, como código, en `src/domain/`. La ejecución está en `src/tools/`.
+- **Dónde vive cada cosa**: el comportamiento del agente está en `agent/prompt.md`. Las reglas de negocio están en `src/knowledge/` (el documento completo, ~5 KB, se inyecta en el system prompt al arrancar con `src/agent/context.ts`; ADR-003) y, como código, en `src/domain/`. La ejecución está en `src/tools/`.
 - **Proveedor**: interfaz propia en `src/llm/adapter.ts`, con implementación para Anthropic. Cambiar de proveedor no toca las herramientas.
 - **Herramientas por `mensaje_id`**: el modelo elige *qué* mensaje procesar; los valores los leen las herramientas del fixture. El modelo no puede inventar un valor registrable.
 
@@ -33,7 +35,11 @@ Dominio e infraestructura (src/domain/, src/infra/)
 
 - Bucle de herramientas con `stopWhen: stepCountIs(25)`: tope de 25 pasos por turno.
 - Tope de tokens por sesión (`MAX_SESSION_TOKENS`, 200000 por defecto), tope de 2000 caracteres por mensaje, rate limit por IP y timeout de 60 s por llamada al modelo.
-- **Confirmación humana en código**: `contratos_registrar` sin `confirmado` se detiene si hay campos en revisión y devuelve `revision[]`. El servidor arma la pregunta de confirmación a partir de ese resultado, no del texto del modelo. Solo deja pasar `confirmado: true` si la sesión tiene esa revisión pendiente para ese `mensaje_id`, la persona confirma en su último mensaje y la confirmación está ligada: hay un único pendiente, o el texto menciona el `mensaje_id` o un valor propuesto. Los pendientes se guardan por `mensaje_id`. El override `contrato` solo se acepta junto con `confirmado: true` y solo para campos que estén en `requiere_revision` (el servidor lo recalcula sin override); `contratos_validar` ya no acepta `contrato`. Los rechazos devuelven `ok:false` sin tocar el maestro.
+- **Confirmación humana en código** (`src/agent/run.ts`):
+  - **Gate**: `contratos_registrar` sin `confirmado` se detiene si hay campos en revisión y devuelve `revision[]`. La pregunta de confirmación la arma el servidor a partir de ese resultado, no el modelo.
+  - **Confirmación ligada**: `confirmado: true` solo pasa si la revisión de ese `mensaje_id` ya estaba pendiente en un turno previo (la persona la vio), el último mensaje de la persona confirma y, con varias revisiones pendientes, nombra el `mensaje_id`. Los pendientes se guardan por `mensaje_id`. Detectar "confirmo" es una heurística de texto; `toolApproval` la reemplazaría por un evento explícito.
+  - **Override acotado**: `contrato` solo se acepta junto con `confirmado: true` y solo para campos que estén en revisión; `contratos_validar` no lo acepta. Cualquier rechazo devuelve `ok:false` sin tocar el maestro.
+  - **Evidencia**: `tests/core/gate-adversarial.test.ts` cubre override sin confirmar, override de un campo fuera de la revisión, confirmar en el mismo turno en que se crea la revisión y confirmar sin nombrar el `mensaje_id` con varios pendientes.
 - Un error de herramienta o del proveedor se explica en lenguaje claro y la sesión sigue viva. Un error en un mensaje no aborta el lote.
 - **Roadmap**: migrar la confirmación al mecanismo `toolApproval` del AI SDK. El gate actual ya es código; el cambio sería de integración, no de regla.
 
@@ -41,7 +47,7 @@ Dominio e infraestructura (src/domain/, src/infra/)
 
 - **Proveedor y modelo**: Anthropic, `claude-haiku-5-5` por defecto, configurable con `LLM_MODEL`. Se eligió por soporte fiable de llamadas a herramientas y por costo bajo para un flujo de muchas llamadas cortas.
 - **Costo por caso procesado**: 53.358 tokens por lote completo, medidos en una corrida real con `claude-haiku-5-5` (2026-11-03); costo en USD no calculado porque el precio por token no se verificó. (6 mensajes + confirmación de 006: 39.041 + 14.317 tokens, `usage.tokens`, sin desglose entrada/salida; una sola corrida, no es un promedio.)
-- **Prompt caching**: se evaluará sobre el system prompt si el costo medido lo justifica.
+- **Prompt caching**: no implementado (sin `cache_control` en `src/`). Se evaluaría sobre el system prompt si el costo medido lo justifica.
 
 ## 5. Estrategia de extracción
 
@@ -57,7 +63,7 @@ Dominio e infraestructura (src/domain/, src/infra/)
 
 Propuesta para que el proceso viva después de la demo. Se resume en una página:
 
-1. **Canal único**: un buzón de contratos administrado por la analista administrativa, que es dueña del maestro. (Dirección a definir por Periferia; en el repo se usa como ejemplo ficticio.)
+1. **Canal único**: un buzón de contratos administrado por la analista administrativa, que es dueña del maestro. Dirección propuesta: `contratos@periferia.example` (ficticia; la real la define Periferia).
 2. **Obligación del comercial**: enviar el PDF firmado, los otrosíes y las actas de terminación en un máximo de 3 días hábiles desde la firma, con asunto `[CONTRATO|OTROSÍ|TERMINACIÓN] <cliente> - <id>`.
 3. **Acuse automático**: el agente responde en un máximo de 15 minutos con clasificación, campos dudosos y lo que falta.
 4. **Excepciones y escalamiento**: contrato sin firma se devuelve al comercial. Contrato sin valor o plazo claro pasa a revisión humana. Sin respuesta del comercial en 5 días hábiles, se escala al director comercial.
@@ -78,7 +84,7 @@ Propuesta para que el proceso viva después de la demo. Se resume en una página
 
 ## 8. Supuestos
 
-- La "rúbrica de la sección 10" mencionada en fuentes no existe en el PRD; no se aplicó.
+- El PRD no incluye una rúbrica de evaluación; no se asumió ninguna.
 - `hoy` es un argumento de la herramienta de alertas, no la fecha del sistema, para que la demo sea reproducible. Se pasa en la demo como `2026-09-03`.
 - La firma del mensaje 006 es la fecha del correo (dentro de agosto de 2026), con confianza 0.8.
 - La póliza condicional del mensaje 006 se trata como de cumplimiento; es un supuesto documentado.
@@ -89,7 +95,7 @@ Propuesta para que el proceso viva después de la demo. Se resume en una página
 
 ## 9. Cobertura
 
-Verificado en la integración final: `npm test` 33/33 y `tsc --noEmit` limpio. Extras: bonus `modulo/` hecho (generado con `npm run build:modulo`, con test). `contratos_leer_pdf` (P1) no se hizo: se asume texto ya extraído. El código interno está en español por decisión (lenguaje ubicuo del PRD); inglés queda como roadmap.
+Verificado en la integración final: `npm test` 38/38 (2026-11-03) y `tsc --noEmit` limpio. Extras: bonus `modulo/` hecho (generado con `npm run build:modulo`, con test). `contratos_leer_pdf` (P1) no se hizo: se asume texto ya extraído. El código interno está en español por decisión (lenguaje ubicuo del PRD); inglés queda como roadmap.
 
 | HU | Historia | Estado | Qué falta para producción |
 |---|---|---|---|
@@ -131,12 +137,8 @@ Sin citas textuales ni URLs.
 | Anthropic, "Building effective agents" (2024) | Agente simple con herramientas y gate antes que framework multiagente (§7) |
 | Yao et al., "ReAct" (2022) | Bucle observar/actuar con tope de 25 pasos (§3) |
 | OWASP Top 10 for LLM Applications | Prompt injection tratada como dato, sin herramientas de borrado ni shell, topes de costo (§11) |
-| Chip Huyen, "AI Engineering" (O'Reilly, 2025) | Medición de tokens por lote y decisión de modelo (§4) |
-| R. C. Martin, Clean Architecture | Dominio en `src/domain/` sin dependencias del modelo ni del servidor |
 | Cockburn, Hexagonal | Adaptador de proveedor en `src/llm/adapter.ts`; herramientas como puertos |
-| Fowler, PoEAA | Capas dominio / infraestructura (`src/domain/`, `src/infra/`) |
-| Richardson, Microservices Patterns | Solo como contraste: se mantiene un monolito; el maestro en CSV sería una base en producción (§7) |
-| Nygard, Release It! | Timeouts, topes, rate limit, `/api/health` y degradación de errores (§3, §11) |
+| Nygard, Release It! | Topes y timeouts inspirados en su enfoque de estabilidad: pasos, tokens, rate limit, `/api/health`, degradación de errores (§3, §11) |
 
 ## 11. Riesgos en producción
 
@@ -144,7 +146,8 @@ Sin citas textuales ni URLs.
 |---|---|
 | Prompt injection desde correos o contratos | El contenido se trata como dato. Los valores y el gate están en código. No hay herramientas de borrado ni de shell. |
 | Fuga de la clave de proveedor | Errores redactados, `.env` fuera de la imagen, `/api/health` sin secretos. |
-| Abuso de costo del link público | Tope de pasos, tope de tokens por sesión, tope diario global (`MAX_DAILY_TOKENS`, 2.000.000 por defecto, día UTC), máximo de 500 sesiones vivas con TTL de 2 h, tamaño de mensaje, rate limit por IP (con `x-forwarded-for` solo si `TRUST_PROXY=1` o en Render), timeout y `ACCESS_KEY` opcional comparada en tiempo constante. `POST /api/reset` queda deshabilitado (403) sin `ACCESS_KEY`. Estáticos con control de ruta y cabeceras CSP, `X-Frame-Options` y `nosniff`. |
+| Abuso de costo del link público | Tope de pasos, tope de tokens por sesión, tope diario global (`MAX_DAILY_TOKENS`, 2.000.000 por defecto, día UTC), máximo de 500 sesiones vivas con TTL de 2 h, tamaño de mensaje, rate limit por IP (con `x-forwarded-for` solo si `TRUST_PROXY=1` o en Render; se toma la última IP, la que añade el proxy), timeout y `ACCESS_KEY` comparada en tiempo constante (opcional en el código; **activa en el despliegue**). `POST /api/reset` queda deshabilitado (403) sin `ACCESS_KEY`. Estáticos con control de ruta y cabeceras CSP, `X-Frame-Options` y `nosniff`. |
+| Despliegue de demo | Render Free: disco efímero (el estado se pierde al reiniciar) y se duerme por inactividad. Es una demo, no producción; ver `docs/RUNBOOK.md`. En producción: base de datos y sesiones fuera de memoria. |
 | Escritura concurrente sobre el maestro | Escritura atómica (archivo temporal + renombrar). `registrar` es síncrono, así que es atómico dentro de un proceso; no hay mutex ni bloqueo entre procesos. Pendiente en producción con base de datos. |
 | Path traversal o CSV injection | Identificadores validados con regex, rutas dentro de `out/`, prefijo `'` en celdas que empiezan con `= + - @`. |
 | Nombres de cliente variables que generan duplicados | Deduplicación por NIT + objeto, con revisión humana por encima del umbral. |
