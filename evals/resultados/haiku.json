@@ -2,10 +2,10 @@
   "modelo": "claude-haiku-5-5",
   "runs": 2,
   "tokens": {
-    "entrada": 1297480,
-    "salida": 65419
+    "entrada": 1350946,
+    "salida": 67841
   },
-  "costoUSD": 0.1624575,
+  "costoUSD": 0.1690151,
   "filas": [
     {
       "id": "HU-1.1",
@@ -109,8 +109,8 @@
       "runs": 2,
       "fallos": [],
       "evidencia": [
-        "run 1: montos en la respuesta=[]; tools=extraer({\"mensaje_id\":\"msg-006\"})",
-        "run 2: montos en la respuesta=[0]; tools=extraer({\"mensaje_id\":\"msg-006\"})"
+        "run 1: montos en la respuesta=[0,0]; tools=extraer({\"mensaje_id\":\"msg-006\"})",
+        "run 2: montos en la respuesta=[0,0]; tools=extraer({\"mensaje_id\":\"msg-006\"})"
       ]
     },
     {

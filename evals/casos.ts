@@ -97,9 +97,11 @@ function vetos(c: Chequeo, ctx: Contexto): void {
 }
 /** Montos con moneda en un texto, normalizados a número. */
 function montos(texto: string): number[] {
-  const re = /(?:USD|COP|PEN|US\$|\$)\s?([\d][\d.,]*)|([\d][\d.,]*)\s?(?:USD|COP|PEN|dólares|pesos)/gi;
-  return [...texto.matchAll(re)].map((m) => {
-    const crudo = (m[1] ?? m[2] ?? "").replace(/[.,](\d{2})$/, "");
+  // Montos junto a su moneda, o tras la etiqueta "valor" (p. ej. "**Valor:** 120000").
+  const plano = texto.replace(/\*\*/g, "").replace(/\b(?:msg|CT|CM|AUTO)-[\d-]+/gi, "").replace(/\d{4}-\d{2}-\d{2}/g, "");
+  const re = /(?:USD|COP|PEN|US\$|\$)\s?([\d][\d.,]*)|([\d][\d.,]*)\s?(?:USD|COP|PEN|dólares|pesos)|valor[^\d\n]{0,20}([\d][\d.,]*)/gi;
+  return [...plano.matchAll(re)].map((m) => {
+    const crudo = (m[1] ?? m[2] ?? m[3] ?? "").replace(/[.,](\d{2})$/, "");
     return Number(crudo.replace(/[.,]/g, ""));
   }).filter((n) => Number.isFinite(n));
 }
@@ -167,7 +169,7 @@ const E = {
     turnos: [solo("msg-007")],
   },
   sinRevision: { id: "conf-sin-revision", turnos: [FRASE_PRD] },
-  tope: { id: "tope-pasos", env: { MAX_STEPS: "2" }, turnos: [`Procesa el buzón de contratos con fecha de hoy ${HOY}. Registra lo que esté limpio. No registres nada dudoso sin preguntarme.`, "continúa"] },
+  tope: { id: "tope-pasos", env: { MAX_STEPS: "1" }, turnos: [`Procesa el buzón de contratos con fecha de hoy ${HOY}. Registra lo que esté limpio. No registres nada dudoso sin preguntarme.`, "continúa"] },
   fuera: { id: "fuera-alcance", turnos: ["¿Me recomiendas una receta de ceviche para el almuerzo?"] },
   proveedor: { id: "proveedor-caido", fallasProveedor: 1, turnos: [solo("msg-001"), solo("msg-001")] },
   timeout: { id: "timeout", turnos: [{ message: solo("msg-001"), env: { LLM_TIMEOUT_MS: "1" } }, solo("msg-001")] },
@@ -681,12 +683,12 @@ export const criterios: Criterio[] = [
   // ===== CA1 · Tope de pasos =====
   {
     id: "CA1.1", caracteristica: "CA1", prd: 207, critico: true, ejecucion: E.tope,
-    gherkin: g("CA1.1", "el tope de pasos corta y dice qué falta", "MAX_STEPS=2 (con 3 el modelo agrupa tools y llega antes a la pausa de msg-006)", "el usuario pide el lote completo", 'la respuesta dice "Alcancé el tope de 2 pasos", "Falta:" y "continúa"'),
+    gherkin: g("CA1.1", "el tope de pasos corta y dice qué falta", "MAX_STEPS=1 (con 2–3 el modelo agrupa tools y llega antes a la pausa de msg-006)", "el usuario pide el lote completo", 'la respuesta dice "Alcancé el tope de 1 pasos", "Falta:" y "continúa"'),
     codigo: ["src/agent/graph.ts:279", "src/agent/graph.ts:202"], tests: ["tests/agent/regresiones-demo.test.ts:91", "tests/agent/langgraph-flow.test.ts:167"],
     calificar(ctx) {
       const c = chequeo(); const r = ctx.turnos[0]?.reply ?? "";
       c.si(ctx.turnos[0]?.status === 200, `HTTP ${ctx.turnos[0]?.status}`);
-      c.si(/Alcancé el tope de 2 pasos/.test(r) && /Falta:/.test(r) && /continúa/i.test(r), `reply=${corto(r, 300)}`);
+      c.si(/Alcancé el tope de 1 pasos/.test(r) && /Falta:/.test(r) && /continúa/i.test(r), `reply=${corto(r, 300)}`);
       c.ev(`llamadas al modelo=${ctx.turnos[0]?.llamadasModelo}; procesados=${JSON.stringify(ctx.turnos[0]?.procesados)}`);
       return c.res;
     },

@@ -235,11 +235,12 @@ function matriz(informes: Informe[]): string {
   for (const c of criterios) lineas.push("```gherkin", c.gherkin, "```", "");
   lineas.push("## Fallos y evidencia", "");
   for (const i of informes) for (const f of i.filas.filter((x) => x.pasa < x.runs)) lineas.push(`- **${f.id}** (${i.modelo}, ${f.pasa}/${f.runs}): ${f.fallos.slice(0, 3).join(" · ")}`);
-  lineas.push("", "## Huecos", "", "Criterios con eval pero sin test unitario:", "", ...(huecos.length ? huecos.map((h) => `- ${h}`) : ["- ninguno"]), "", "Criterios del PRD sin eval con modelo real (no dependen del modelo o no son observables por la API):", "", "| Criterio | PRD | Test unitario | Por qué no hay eval real |", "|---|---|---|---|", ...SIN_EVAL.map((x) => `| ${x.criterio} | [L${x.prd}](../docs/PRD.md#L${x.prd}) | ${x.tests.length ? x.tests.map((t) => `\`${t}\``).join("<br>") : "**hueco**"} | ${x.motivo} |`), "");
+  lineas.push("", "## Huecos", "", "Criterios con eval pero sin test unitario:", "", ...(huecos.length ? huecos.map((h) => `- ${h}`) : ["- ninguno"]), "", "Criterios del PRD sin eval con modelo real (no dependen del modelo o no son observables por la API):", "", "| Criterio | PRD | Test unitario | Por qué no hay eval real |", "|---|---|---|---|", ...sinEval().map((x) => `| ${x.criterio} | [L${x.prd}](../docs/PRD.md#L${x.prd}) | ${x.tests.length ? x.tests.map((t) => `\`${t}\``).join("<br>") : "**hueco**"} | ${x.motivo} |`), "");
   return lineas.join("\n");
 }
 
-const SIN_EVAL: { criterio: string; prd: number; tests: string[]; motivo: string }[] = [
+function sinEval(): { criterio: string; prd: number; tests: string[]; motivo: string }[] {
+  return [
   { criterio: "CA3 · el front resalta la confirmación", prd: 209, tests: ["tests/agent/front.test.ts:111", "tests/agent/front-a7.test.ts:257"], motivo: "es UI; la API ya expone needsConfirmation (RN5.1)" },
   { criterio: "§6.2 · execute nunca lanza", prd: 190, tests: ["tests/agent/langchain-provider.test.ts:125", "tests/core/tools.test.ts:159"], motivo: "requiere forzar argumentos que el modelo real no emite (E1 de fallos-produccion.md)" },
   { criterio: "§6.4 · GET /api/sessions/:id y /api/health", prd: 220, tests: ["tests/agent/agent.test.ts:112"], motivo: "API sin modelo; /api/health se usa en S8.5" },
@@ -249,3 +250,4 @@ const SIN_EVAL: { criterio: string; prd: number; tests: string[]; motivo: string
   { criterio: "§8 · zod obligatorio en args", prd: 336, tests: ["tests/core/tools.test.ts:159"], motivo: "estático; S6.2.1 prueba el efecto" },
   { criterio: "HU-3 · NIT+objeto ≥0.9 y colisiones de id", prd: 296, tests: ["tests/core/clasificacion.test.ts:60", "tests/core/clasificacion.test.ts:247"], motivo: "los fixtures no traen ese caso; lógica determinista" },
 ];
+}
