@@ -58,6 +58,7 @@ function analizar(directory: string, mensajeId: string, override?: Record<string
     return { ext, val: clasificar(ext, maestro), maestro, adjunto: null };
   }
   let ext = extraerContrato(msg.texto, msg.correo, leerComerciales(directory), maestro);
+  if (ext.error) throw new Error(ext.error);
   if (override && ext.contrato) {
     const o = overrideSchema.parse(override);
     ext = { ...ext, contrato: aplicarOverride(ext.contrato, o) };
@@ -134,7 +135,8 @@ export const extraer: ToolDef<typeof ARGS_EXTRAER> = {
       if (!ext.tiene_contrato || !ext.contrato) {
         return { respuesta: ok({ tiene_contrato: false, motivo: ext.motivo ?? ext.rechazo }), resumen: "sin contrato", ok: true, mid: p.mensaje_id };
       }
-      const data = { tiene_contrato: true, tipo_documento: ext.tipo, ...ext.contrato, requiere_revision: ext.requiere_revision, motivos: ext.motivos, rechazo: ext.rechazo };
+      const campos = Object.fromEntries(Object.entries(ext.contrato).map(([campo, valor]) => [campo, ext.contrato!.confianza[campo] === 0 ? null : valor]));
+      const data = { tiene_contrato: true, tipo_documento: ext.tipo, ...campos, requiere_revision: ext.requiere_revision, motivos: ext.motivos, rechazo: ext.rechazo };
       return { respuesta: ok(data), resumen: `extraído ${ext.contrato.id_contrato} (${ext.tipo})`, ok: true, mid: p.mensaje_id };
     });
   },
@@ -217,7 +219,7 @@ function resultadoRevision(a: Analisis, c: Contrato): Resultado {
   const campos = a.val.requiere_revision;
   const revision = campos.map((campo) => ({
     campo,
-    valor_propuesto: (c as Record<string, unknown>)[campo] ?? null,
+    valor_propuesto: c.confianza[campo] === 0 ? null : (c as Record<string, unknown>)[campo] ?? null,
     confianza: c.confianza[campo] ?? 0,
     motivo: a.ext.motivos[campo] ?? "Requiere revisión",
   }));
@@ -302,6 +304,8 @@ function registrarSync(args: unknown, ctx: ToolContext): Resultado {
     };
   }
   if (val.requiere_revision.length > 0 && p.confirmado !== true) return resultadoRevision(a, c);
+  const ausentes = val.requiere_revision.filter((campo) => c.confianza[campo] === 0 && p.contrato?.[campo] === undefined);
+  if (ausentes.length > 0) return rechazo(`datos incompletos: corrige los campos ausentes (${ausentes.join(", ")})`, "campos ausentes sin corregir");
   if (!datosCompletos(c)) return rechazo("datos incompletos: id_contrato, cliente y fechas son obligatorios", "datos incompletos");
 
   const origen = a.adjunto ? rutaAdjunto(ctx.directory, p.mensaje_id, a.adjunto) : null;

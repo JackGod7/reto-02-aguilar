@@ -2,7 +2,7 @@ import type { Contrato, FilaMaestro } from "./contrato.ts";
 import { filaAContrato, revisionPorConfianza } from "./contrato.ts";
 import { extraerDinero } from "./dinero.ts";
 import type { Moneda } from "./dinero.ts";
-import { addMonths, parseFechaEs, todasLasFechasEs } from "./fechas.ts";
+import { addMonths, esFechaIso, parseFechaEs, todasLasFechasEs } from "./fechas.ts";
 
 export const NIT_PERIFERIA = "900123456";
 
@@ -20,6 +20,7 @@ export interface Extraccion {
   tipo: "contrato" | "otrosi" | null;
   motivo?: string;
   rechazo?: string;
+  error?: string;
   referencia?: string;
   contrato?: Contrato;
   requiere_revision: string[];
@@ -83,6 +84,22 @@ function ymd(isoFecha: string): string {
   return isoFecha.slice(0, 10);
 }
 
+function errorDeContenido(texto: string): string | null {
+  for (const m of texto.matchAll(/(?:\(\d{1,2}\)|\b\d{1,2})\s+de\s+[a-záéíóú]+\s+de\s+\d{4}|\b\d{4}-\d{2}-\d{2}\b/gi)) {
+    const valida = /^\d{4}-/.test(m[0]) ? esFechaIso(m[0]) : parseFechaEs(m[0]) !== null;
+    if (!valida) return "Fecha inválida en el contrato";
+  }
+  // Buscar códigos en la cláusula monetaria evita interpretar identificadores
+  // tributarios de las partes como monedas. Incluye importes sin paréntesis.
+  const valor = parrafos(texto).filter((p) => /\bVALOR\b/i.test(p)).join("\n");
+  for (const m of valor.matchAll(/\b([A-Z]{3})\s*\$?\s*[\d.,]+\b/gi)) {
+    const codigo = (m[1] ?? "").toUpperCase();
+    if (["NIT", "RUC"].includes(codigo)) continue;
+    if (!["COP", "USD", "PEN", "PAB", "HNL"].includes(codigo)) return `Moneda desconocida: ${codigo}`;
+  }
+  return null;
+}
+
 function recortar(s: string, n: number): string {
   return s.length <= n ? s : s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…";
 }
@@ -96,11 +113,14 @@ export function extraerContrato(
   const sinContrato = (motivo: string): Extraccion => ({
     tiene_contrato: false, tipo: null, motivo, requiere_revision: [], motivos: {},
   });
+  if (!texto.trim()) return { ...sinContrato("Texto vacío"), error: "El adjunto de contrato tiene texto vacío" };
   const primera = texto.split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
   const tipo = /^CONTRATO\b/.test(primera) ? "contrato" : /^OTROS[ÍI]/i.test(primera) ? "otrosi" : null;
   if (!tipo) {
     return sinContrato(`El documento no es un contrato ni un otrosí (${recortar(primera, 40) || "vacío"})`);
   }
+  const error = errorDeContenido(texto);
+  if (error) return { ...sinContrato(error), tipo, tiene_contrato: true, error };
   const ps = parrafos(texto);
   const advertencias: string[] = [];
   const motivos: Record<string, string> = {};
@@ -169,7 +189,7 @@ export function extraerContrato(
   conf.pais = pais ? 1 : 0;
 
   const objetoP = clausula(ps, "OBJETO");
-  const objeto = objetoP ? recortar(objetoP.replace(/^.*?\bOBJETO\.\s*/, ""), 200) : "";
+  const objeto = objetoP ? recortar(objetoP.replace(/^.*?\bOBJETO\.\s*/, "").replace(/^El objeto es:\s*/i, "").replace(/^EL\s+CONTRATISTA\s+se\s+obliga\s+a\s+/i, ""), 200) : "";
   conf.objeto = objeto ? 1 : 0;
 
   if (!cliente && !objeto) {
@@ -182,14 +202,14 @@ export function extraerContrato(
   let valorIndeterminado = false;
   let moneda: Moneda = pais ? (MONEDA_POR_PAIS[pais] ?? "COP") : "COP";
   const dinero = extraerDinero(valorP);
-  conf.moneda = 0.8;
+  conf.moneda = 0;
   if (dinero) {
     valor = dinero.valor; moneda = dinero.moneda; conf.valor = 1; conf.moneda = 1;
   } else if (/no tiene un valor determinado|valor indeterminado/i.test(valorP)) {
     valorIndeterminado = true; conf.valor = 0.5;
     motivos.valor = "El contrato no tiene valor determinado (se propone 0)";
     const mon = /\b(COP|USD|PEN|PAB|HNL)\b/.exec(texto)?.[1];
-    if (mon) moneda = mon as Moneda;
+    if (mon) { moneda = mon as Moneda; conf.moneda = 0.8; }
   } else {
     conf.valor = 0;
     motivos.valor = "No se encontró el valor entre paréntesis en la cláusula VALOR";
@@ -206,6 +226,7 @@ export function extraerContrato(
   } else {
     const meses = /\((\d{1,3})\)\s+meses/.exec(plazoP)?.[1];
     inicio = ymd(correo.fecha);
+    if (!esFechaIso(inicio)) return { ...sinContrato("Fecha del correo inválida"), tipo, tiene_contrato: true, error: "Fecha del correo inválida para inferir el inicio" };
     conf.fecha_inicio = 0.8;
     motivos.fecha_inicio = "Inferida de la fecha del correo (el contrato no trae fechas explícitas)";
     if (meses) {
@@ -217,6 +238,8 @@ export function extraerContrato(
       motivos.fecha_fin = "No se encontró fecha de fin ni plazo en meses";
     }
   }
+
+  if (inicio && fin && fin < inicio) return { ...sinContrato("Plazo inválido"), tipo, tiene_contrato: true, error: "Fecha fin anterior a fecha inicio" };
 
   // Póliza
   const garP = clausula(ps, "GARANT[ÍI]AS");
