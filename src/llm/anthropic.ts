@@ -1,3 +1,4 @@
+import "./sin-trazas.ts"; // primero: fuerza tracing externo apagado
 import { traceable } from "langsmith/traceable";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";

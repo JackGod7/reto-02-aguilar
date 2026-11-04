@@ -1,3 +1,4 @@
+import "../llm/sin-trazas.ts"; // primero: fuerza tracing externo apagado
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

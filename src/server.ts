@@ -1,3 +1,4 @@
+import "./llm/sin-trazas.ts"; // primero: fuerza tracing externo apagado
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
