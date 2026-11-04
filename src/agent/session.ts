@@ -46,3 +46,11 @@ export function crearSesion(): Session {
 export function obtenerSesion(id: string): Session | undefined {
   return sesiones.get(id);
 }
+
+export function olvidarSesion(id: string): void {
+  sesiones.delete(id);
+}
+
+export function limpiarSesiones(): void {
+  sesiones.clear();
+}
