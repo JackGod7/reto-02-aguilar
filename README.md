@@ -6,7 +6,7 @@ Agente conversacional que lee el buzón de contratos, extrae los datos, valida c
 
 - Chat: `https://reto-02-aguilar.onrender.com`
 - Salud del servicio: `https://reto-02-aguilar.onrender.com/api/health`
-- Clave de acceso: si el servidor tiene `ACCESS_KEY` configurada, la pantalla la pide. La instancia desplegada la tiene activa; el valor se entrega por el hilo de correo.
+- Clave de acceso (PRD §6.1: si el link se protege, la clave va en el README): `ia-generativa-reto-2026.=.`. La pantalla la pide la primera vez. El gasto está acotado por el tope diario de tokens (`MAX_DAILY_TOKENS`) y por el límite de gasto del workspace en Anthropic; la clave se rotará tras la evaluación.
 
 ## Requisitos
 
