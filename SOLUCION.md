@@ -42,7 +42,7 @@ Dominio e infraestructura (src/domain/, src/infra/)
 ## 4. Elección del modelo
 
 - **Proveedor y modelo**: Anthropic, `claude-haiku-5-5` por defecto, configurable con `LLM_MODEL`. Se eligió por soporte fiable de llamadas a herramientas y por costo bajo para un flujo de muchas llamadas cortas.
-- **Costo por caso procesado**: `<COSTO>`. Se medirá con tokens reales en la integración final (M7) × precio vigente del proveedor a la fecha de medición. No se estima aquí.
+- **Costo por caso procesado**: **sin medir** (`<COSTO>`): la integración final no tuvo `ANTHROPIC_API_KEY`, así que no hay tokens reales ni se afirma precio. Cálculo pendiente: tokens reales (`usage.tokens` de `/api/chat`) × precio vigente de `claude-haiku-5-5`, a verificar con fecha. El flujo determinista (demo) no consume tokens; el LLM solo orquesta.
 - **Prompt caching**: se evaluará sobre el system prompt si el costo medido lo justifica.
 
 ## 5. Estrategia de extracción
@@ -94,12 +94,12 @@ Estado pendiente de verificar en M7 (integración final). Ningún estado se marc
 
 | HU | Historia | Estado | Qué falta para producción |
 |---|---|---|---|
-| HU-1 | Leer el buzón | Pendiente de verificar en M7 | Lectura real de Exchange/Graph |
-| HU-2 | Extraer datos con confianza | Pendiente de verificar en M7 | OCR para escaneados; más variantes de plantilla |
-| HU-3 | Validar y clasificar | Pendiente de verificar en M7 | Mapeo de comerciales desde directorio real |
-| HU-4 | Registrar y archivar | Pendiente de verificar en M7 | SharePoint real; control de concurrencia |
-| HU-5 | Alertar | Pendiente de verificar en M7 | Envío del reporte a gerencia |
-| HU-6 | Manejo de errores | Pendiente de verificar en M7 | Monitoreo y alertas técnicas |
+| HU-1 | Leer el buzón | Verificado: `leer_buzon` (tests core y demo: 6 mensajes, excluye procesados) | Lectura real de Exchange/Graph |
+| HU-2 | Extraer datos con confianza | Verificado: extracción determinista con confianza (tests core: 001, 002, 004, 006 exactos) | OCR para escaneados; más variantes de plantilla |
+| HU-3 | Validar y clasificar | Verificado: clasificación nuevo/actualización/duplicado/rechazado en demo y tests (tabla SPEC §4) | Mapeo de comerciales desde directorio real |
+| HU-4 | Registrar y archivar | Verificado: registro, CSV, archivo, historial, y gate de 006 con tools reales (`tests/agent/integracion.test.ts`) | SharePoint real; control de concurrencia |
+| HU-5 | Alertar | Verificado: `out/alertas.md` con las 3 secciones (demo) | Envío del reporte a gerencia |
+| HU-6 | Manejo de errores | Verificado: rechazo de cotización, path traversal, args inválidos, 400/404 (tests); no probado contra errores reales del proveedor | Monitoreo y alertas técnicas |
 
 ## 10. Uso de IA
 
