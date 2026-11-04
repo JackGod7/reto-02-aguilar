@@ -182,9 +182,15 @@ for (let run = 1; run <= runs && !topeAlcanzado; run++) {
       for (const x of res.evidencia) console.log(`    · ${x}`);
     }
     if (r) rmSync(r.dir, { recursive: true, force: true });
+    guardar(); // incremental: un corte no pierde lo ya corrido
   }
 }
 
+function guardar(): void {
+  if (!o.json || !modelo) return;
+  const costo = (uso.entrada * modelo.entrada + uso.salida * modelo.salida) / 1_000_000;
+  writeFileSync(o.json, JSON.stringify({ modelo: modelo.id, runs, tokens: { entrada: uso.entrada, salida: uso.salida }, costoUSD: costo, filas: [...filas.values()] } satisfies Informe, null, 2));
+}
 const costoUSD = (uso.entrada * modelo.entrada + uso.salida * modelo.salida) / 1_000_000;
 console.log(`\n${"criterio".padEnd(10)} ${"característica".padEnd(14)} crítico  resultado  ejecución              tokens/run  s/run`);
 for (const c of elegidos) {
@@ -198,7 +204,7 @@ const criticoFalla = [...filas.values()].some((f) => f.critico && (f.runs === 0 
 console.log(`\nTokens: entrada ${uso.entrada} · salida ${uso.salida} · total ${consumidos()} · llamadas al modelo ${uso.llamadas}`);
 console.log(`Costo estimado: US$ ${costoUSD.toFixed(4)} (${modelo.id}, precio de lista sin descuento de caché)`);
 console.log(criticoFalla ? "Resultado: FALLA algún criterio crítico" : "Resultado: todos los críticos pasan");
-if (o.json) writeFileSync(o.json, JSON.stringify({ modelo: modelo.id, runs, tokens: { entrada: uso.entrada, salida: uso.salida }, costoUSD, filas: [...filas.values()] } satisfies Informe, null, 2));
+guardar();
 process.exit(criticoFalla ? 1 : 0);
 
 // ---------- matriz de trazabilidad ----------
