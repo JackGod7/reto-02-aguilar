@@ -2,3 +2,4 @@ node_modules/
 out/
 .env
 plan/fuentes/*.zip
+plan/fuentes/
