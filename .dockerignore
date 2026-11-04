@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules
+out
+plan
+.git
+docs
+*.zip
