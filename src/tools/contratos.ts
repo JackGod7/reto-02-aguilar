@@ -5,7 +5,7 @@ import { calcularAlertas, renderAlertasMd } from "../domain/alertas.ts";
 import { aplicarOverride, idContratoSchema, overrideSchema } from "../domain/contrato.ts";
 import type { FilaMaestro } from "../domain/contrato.ts";
 import { extraerContrato } from "../domain/extraccion.ts";
-import type { Extraccion } from "../domain/extraccion.ts";
+import type { Comercial, Extraccion } from "../domain/extraccion.ts";
 import { esFechaIso } from "../domain/fechas.ts";
 import { clasificar } from "../domain/reglas.ts";
 import type { Validacion } from "../domain/reglas.ts";
@@ -57,13 +57,48 @@ function analizar(directory: string, mensajeId: string, override?: Record<string
     const ext: Extraccion = { tiene_contrato: false, tipo: null, motivo: "El mensaje no tiene adjunto", requiere_revision: [], motivos: {} };
     return { ext, val: clasificar(ext, maestro), maestro, adjunto: null };
   }
-  let ext = extraerContrato(msg.texto, msg.correo, leerComerciales(directory), maestro);
+  const comerciales = leerComerciales(directory);
+  let ext = extraerContrato(msg.texto, msg.correo, comerciales, maestro);
   if (ext.error) throw new Error(ext.error);
   if (override && ext.contrato) {
     const o = overrideSchema.parse(override);
     ext = { ...ext, contrato: aplicarOverride(ext.contrato, o) };
   }
-  return { ext, val: clasificar(ext, maestro), maestro, adjunto: msg.adjuntoNombre };
+  const val = ext.contrato ? revisionDeContexto(directory, mensajeId, ext.contrato, clasificar(ext, maestro), msg.correo.de, comerciales, maestro) : clasificar(ext, maestro);
+  return { ext, val, maestro, adjunto: msg.adjuntoNombre };
+}
+
+/**
+ * La revisión es por contrato, no por mensaje (H2). clasificar() solo ve un mensaje; aquí se añade lo que
+ * necesita otros: (a) otro mensaje sin procesar con el mismo id_contrato tiene revisión pendiente o rechazada;
+ * (b) un remitente fuera de comerciales.json cambia valor o fechas de un contrato existente.
+ */
+function revisionDeContexto(directory: string, mensajeId: string, c: Contrato, val: Validacion, de: string, comerciales: Comercial[], maestro: FilaMaestro[]): Validacion {
+  const campos: Record<string, { valor: string; motivo: string }> = {};
+  const procesados = new Set(leerProcesados(directory));
+  const pendiente = c.id_contrato === "" ? undefined : listarIds(directory).find((id) => {
+    if (id === mensajeId || procesados.has(id)) return false;
+    try {
+      const m = leerMensaje(directory, id);
+      const e = m.texto === null ? null : extraerContrato(m.texto, m.correo, comerciales, maestro);
+      return e?.contrato?.id_contrato === c.id_contrato && clasificar(e, maestro).requiere_revision.length > 0;
+    } catch { return false; }
+  });
+  if (pendiente) campos.id_contrato = { valor: c.id_contrato, motivo: `${pendiente} trae el mismo contrato y tiene una revisión pendiente o rechazada; confirma este mensaje de forma explícita` };
+  if (!comerciales.some((x) => x.email.toLowerCase() === de.trim().toLowerCase())) {
+    for (const k of ["valor", "fecha_inicio", "fecha_fin"]) {
+      const d = val.diferencias?.[k];
+      if (d) campos[k] = { valor: String(d.despues), motivo: `El remitente ${de} no es un comercial registrado y cambia ${k} del contrato existente` };
+    }
+  }
+  const nombres = Object.keys(campos);
+  if (nombres.length === 0) return val;
+  return {
+    ...val,
+    requiere_revision: [...new Set([...val.requiere_revision, ...nombres])],
+    motivos_revision: { ...val.motivos_revision, ...Object.fromEntries(nombres.map((k) => [k, campos[k]!.motivo])) },
+    valores_revision: { ...val.valores_revision, ...Object.fromEntries(nombres.map((k) => [k, campos[k]!.valor])) },
+  };
 }
 
 async function envolver(
