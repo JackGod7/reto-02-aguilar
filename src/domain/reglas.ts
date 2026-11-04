@@ -1,8 +1,8 @@
 import type { Contrato, FilaMaestro } from "./contrato.ts";
 import type { Extraccion } from "./extraccion.ts";
 
-export type Clasificacion = "nuevo" | "actualizacion" | "duplicado" | "rechazado";
-export type Diferencias = Record<string, { antes: string | number | boolean; despues: string | number | boolean }>;
+type Clasificacion = "nuevo" | "actualizacion" | "duplicado" | "rechazado";
+type Diferencias = Record<string, { antes: string | number | boolean; despues: string | number | boolean }>;
 
 export interface Validacion {
   clasificacion: Clasificacion;

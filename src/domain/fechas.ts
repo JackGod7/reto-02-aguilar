@@ -10,7 +10,7 @@ function diasDelMes(y: number, m: number): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
-export function iso(y: number, m: number, d: number): string | null {
+function iso(y: number, m: number, d: number): string | null {
   if (m < 1 || m > 12 || d < 1 || d > diasDelMes(y, m)) return null;
   return `${y}-${pad(m)}-${pad(d)}`;
 }

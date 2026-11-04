@@ -24,13 +24,13 @@ export interface ToolContext {
 }
 
 /** `args` es un objeto plano de esquemas zod (cada campo con .describe()); el esquema estricto se construye con `esquema(args)`. */
-export interface ToolDef<A extends z.ZodRawShape> {
+interface ToolDef<A extends z.ZodRawShape> {
   description: string;
   args: A;
   execute(args: z.infer<z.ZodObject<A>>, ctx: ToolContext): Promise<string>;
 }
 
-export const esquema = <A extends z.ZodRawShape>(args: A) => z.object(args).strict();
+const esquema = <A extends z.ZodRawShape>(args: A) => z.object(args).strict();
 
 const HOY_DEFECTO = "2026-09-03";
 const ok = (data: unknown): string => JSON.stringify({ ok: true, data });

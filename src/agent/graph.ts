@@ -44,7 +44,7 @@ const Estado = Annotation.Root({
 type Flujo = typeof Estado.State;
 type Cambio = Partial<Flujo>;
 
-export interface RunOpts {
+interface RunOpts {
   adapter: LLMAdapter;
   session: Session;
   message: string;
