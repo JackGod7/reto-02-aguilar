@@ -132,7 +132,7 @@ async function verificar(): Promise<void> {
   const copia = join(temporal, "app");
   mkdirSync(copia);
   // Lista positiva: no se leen ni copian .env, .npmrc, .git, out o node_modules del checkout.
-  const rutas = ["package.json", "package-lock.json", "tsconfig.json", "Dockerfile", "demo.ts", "src", "agent", "web", "fixtures", "tests", "scripts", "modulo"];
+  const rutas = ["package.json", "package-lock.json", "tsconfig.json", "Dockerfile", "demo.ts", "src", "agent", "web", "fixtures", "tests", "scripts", "modulo", "evals"];
   try {
     for (const ruta of rutas) copiar(join(raiz, ruta), join(copia, ruta));
     iguales(originales, huellas(join(copia, "fixtures")), "fixtures de la copia");
