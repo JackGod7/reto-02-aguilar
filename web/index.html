@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registro de Contratos Vigentes</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1d2330;--muted:#5b6475;--card:#ffffff;--line:#dfe3ea;--accent:#2d5be3;--amber-bg:#fff4d6;--amber-line:#d99a00;--amber-fg:#4d3800;--err-bg:#fde8e8;--err-fg:#8a1c1c;--ok:#1e7a46;--bad:#b42318}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#0f1218;--fg:#e7eaf0;--muted:#9aa3b2;--card:#171c25;--line:#2a313d;--accent:#7b9cff;--amber-bg:#3a2e0c;--amber-line:#d9a21b;--amber-fg:#ffe7a3;--err-bg:#3d1717;--err-fg:#ffb4b4;--ok:#5fd394;--bad:#ff8a80}
+}
+:root[data-theme="dark"]{--bg:#0f1218;--fg:#e7eaf0;--muted:#9aa3b2;--card:#171c25;--line:#2a313d;--accent:#7b9cff;--amber-bg:#3a2e0c;--amber-line:#d9a21b;--amber-fg:#ffe7a3;--err-bg:#3d1717;--err-fg:#ffb4b4;--ok:#5fd394;--bad:#ff8a80}
+[hidden]{display:none !important}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.app{max-width:820px;margin:0 auto;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:0 16px}
+header{padding:14px 0;border-bottom:1px solid var(--line)}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:1.15rem;margin:0}
+.sub{margin:2px 0 0;color:var(--muted);font-size:.88rem}
+#log{flex:1;overflow-y:auto;padding:16px 0;display:flex;flex-direction:column;gap:12px;min-height:200px}
+.msg{padding:10px 14px;border-radius:12px;background:var(--card);border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+.msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-color:transparent;max-width:85%}
+.msg.error{background:var(--err-bg);color:var(--err-fg);border-color:transparent}
+.role{font-size:.74rem;color:var(--muted);margin-bottom:4px;font-weight:600}
+.msg.user .role{color:rgba(255,255,255,.85)}
+details.tool{margin:8px 0;border:1px dashed var(--line);border-radius:8px;padding:6px 10px;font-size:.88rem;white-space:normal}
+details.tool summary{cursor:pointer;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{font-size:.72rem;padding:1px 8px;border-radius:999px;border:1px solid currentColor}
+.ok{color:var(--ok)} .bad{color:var(--bad)}
+pre.code{white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(127,127,127,.1);padding:8px;border-radius:6px;margin:6px 0 0;font-size:.82rem}
+.confirm{border:2px solid var(--amber-line);background:var(--amber-bg);color:var(--amber-fg);border-radius:12px;padding:14px;max-width:100%}
+.confirm h2{font-size:1rem;margin:0 0 8px}
+.confirm p{margin:10px 0 0}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{text-align:left;padding:6px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.status{font-size:.85rem;margin:8px 0 0}
+button{font:inherit;padding:9px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button.primary{background:var(--accent);color:#fff;border-color:transparent}
+button:disabled{opacity:.5;cursor:not-allowed}
+.thinking{color:var(--muted);font-style:italic;padding:4px 2px}
+.keybox{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px 14px;margin-top:12px}
+.keybox p{margin:0 0 8px;font-size:.92rem}
+.keybox .row{display:flex;gap:8px;flex-wrap:wrap}
+.keybox input{flex:1;min-width:180px;font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+#composer{display:flex;gap:8px;padding:12px 0 16px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--bg)}
+textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);resize:vertical;min-height:44px;max-height:180px}
+#composer button{align-self:stretch}
+@media (max-width:480px){
+  .app{padding:0 16px}
+  .msg.user{max-width:95%}
+  #composer{flex-direction:column}
+  #composer button{align-self:flex-end}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="head">
+      <div>
+        <h1>Registro de Contratos Vigentes</h1>
+        <p class="sub">Registra y consulta contratos a partir de correos y adjuntos.</p>
+      </div>
+      <button id="newChat" type="button">Nueva conversación</button>
+    </div>
+  </header>
+
+  <section id="keyBox" class="keybox" hidden aria-live="assertive">
+    <form id="keyForm">
+      <p id="keyHint">El servidor pide una clave de acceso.</p>
+      <div class="row">
+        <input id="accessKey" type="password" autocomplete="off" placeholder="Clave de acceso" aria-label="Clave de acceso">
+        <button class="primary" type="submit">Entrar</button>
+        <button id="keyCancel" type="button">Cancelar</button>
+      </div>
+    </form>
+  </section>
+
+  <main id="log" aria-live="polite"></main>
+
+  <form id="composer">
+    <textarea id="input" rows="2" maxlength="2000" placeholder="Escribe un mensaje… (Enter envía, Shift+Enter nueva línea)" aria-label="Mensaje"></textarea>
+    <button id="send" class="primary" type="submit">Enviar</button>
+  </form>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const MAX_LEN = 2000;
+  const KEY_SESSION = 'contratos.sessionId';
+  const ERRORES = {
+    unauthorized: 'La clave de acceso no es válida o falta.',
+    not_found: 'La sesión ya no existe. Se iniciará una nueva conversación.',
+    invalid_request: 'El mensaje no es válido (vacío o demasiado largo).',
+    rate_limited: 'Demasiadas solicitudes seguidas. Espera un momento y vuelve a intentarlo.',
+    llm_error: 'El modelo no pudo responder. Inténtalo de nuevo.',
+    internal_error: 'Ocurrió un error interno en el servidor.',
+    network: 'No se pudo conectar con el servidor. Revisa tu conexión.'
+  };
+
+  const state = {
+    sessionId: loadSession(),
+    accessKey: '',          // solo en memoria; nunca en localStorage ni en logs
+    keyRejected: false,
+    busy: false,
+    retry: null,
+    thinking: null,
+    pendingBlock: null
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const log = $('log');
+  const input = $('input');
+  const sendBtn = $('send');
+
+  // Crea elementos usando solo textContent/createTextNode: nunca innerHTML con datos.
+  function el(tag, attrs, ...kids) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v === undefined || v === null || v === false) continue;
+        if (k === 'class') node.className = String(v);
+        else node.setAttribute(k, String(v));
+      }
+    }
+    for (const kid of kids.flat()) {
+      if (kid === null || kid === undefined) continue;
+      node.append(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    }
+    return node;
+  }
+
+  function loadSession() {
+    try { return localStorage.getItem(KEY_SESSION) || ''; } catch { return ''; }
+  }
+  function saveSession(value) {
+    try {
+      if (value) localStorage.setItem(KEY_SESSION, value);
+      else localStorage.removeItem(KEY_SESSION);
+    } catch { /* almacenamiento no disponible: la sesión vive solo en memoria */ }
+  }
+
+  function scrollToEnd() { log.scrollTop = log.scrollHeight; }
+
+  function fmtValor(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    if (typeof v === 'object') { try { return JSON.stringify(v); } catch { return '—'; } }
+    return String(v);
+  }
+  function fmtConf(c) {
+    return typeof c === 'number' ? Math.round(c * 100) + '%' : '—';
+  }
+
+  function explainError(err) {
+    const code = err && err.code;
+    if (code && ERRORES[code]) return ERRORES[code];
+    if (err && typeof err.message === 'string' && err.message) return err.message;
+    return 'Ocurrió un error inesperado.';
+  }
+
+  async function api(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (state.accessKey) headers['x-access-key'] = state.accessKey;
+    let res;
+    try {
+      res = await fetch(path, { ...opts, headers });
+    } catch {
+      throw { code: 'network' };
+    }
+    let data = null;
+    try { data = await res.json(); } catch { data = null; }
+    if (res.status === 401) throw { code: 'unauthorized', status: 401 };
+    if (!res.ok) {
+      const e = data && data.error ? data.error : {};
+      throw { code: e.code || ('http_' + res.status), message: e.message, status: res.status };
+    }
+    return data;
+  }
+
+  function setBusy(on) {
+    state.busy = on;
+    sendBtn.disabled = on;
+  }
+
+  function showThinking(on) {
+    if (on && !state.thinking) {
+      state.thinking = el('div', { class: 'thinking', role: 'status' }, 'pensando…');
+      log.append(state.thinking);
+      scrollToEnd();
+    } else if (!on && state.thinking) {
+      state.thinking.remove();
+      state.thinking = null;
+    }
+  }
+
+  function renderToolCall(tc) {
+    let argsText;
+    try { argsText = JSON.stringify(tc.args ?? {}, null, 2); } catch { argsText = '{}'; }
+    return el('details', { class: 'tool' },
+      el('summary', null,
+        el('strong', null, String(tc.name || 'herramienta')),
+        el('span', { class: 'badge ' + (tc.ok ? 'ok' : 'bad') }, tc.ok ? 'ok' : 'error')),
+      el('div', { style: 'margin-top:6px' }, 'Resumen: ', tc.resumen || '—'),
+      el('pre', { class: 'code' }, 'Args:\n' + argsText));
+  }
+
+  function addMessage(m) {
+    const isUser = m.role === 'user';
+    const bubble = el('div', { class: 'msg ' + (isUser ? 'user' : 'assistant') },
+      el('div', { class: 'role' }, isUser ? 'Tú' : 'Asistente'),
+      ...(Array.isArray(m.toolCalls) ? m.toolCalls.map(renderToolCall) : []),
+      m.text ? el('div', null, String(m.text)) : null);
+    log.append(bubble);
+    if (m.needsConfirmation) addConfirm(m.needsConfirmation);
+    scrollToEnd();
+  }
+
+  function addError(text) {
+    log.append(el('div', { class: 'msg error', role: 'alert' }, text));
+    scrollToEnd();
+  }
+
+  function addConfirm(nc) {
+    if (state.pendingBlock) state.pendingBlock.disable();
+
+    const campos = Array.isArray(nc.campos) ? nc.campos : [];
+    const okBtn = el('button', { type: 'button', class: 'primary' }, 'Aprobar');
+    const noBtn = el('button', { type: 'button' }, 'Rechazar');
+    const status = el('p', { class: 'status', role: 'status' });
+
+    const rows = campos.map((c) => el('tr', null,
+      el('td', null, String(c.campo ?? '')),
+      el('td', null, fmtValor(c.valor_propuesto)),
+      el('td', null, fmtConf(c.confianza)),
+      el('td', null, c.motivo ? String(c.motivo) : '—')));
+
+    const box = el('section', { class: 'confirm', 'aria-label': 'Confirmación requerida' },
+      el('h2', null, '⚠ Confirmación requerida · ' + String(nc.mensaje_id ?? '')),
+      el('div', { class: 'tablewrap' },
+        el('table', null,
+          el('thead', null, el('tr', null,
+            el('th', null, 'Campo'), el('th', null, 'Valor propuesto'),
+            el('th', null, 'Confianza'), el('th', null, 'Motivo'))),
+          el('tbody', null, ...rows))),
+      el('p', null, nc.pregunta ? String(nc.pregunta) : '¿Confirmas el registro?'),
+      el('div', { class: 'btns' }, okBtn, noBtn),
+      status);
+
+    const disable = () => { okBtn.disabled = true; noBtn.disabled = true; };
+    const decide = (texto, etiqueta) => {
+      if (state.busy) return;
+      disable();
+      status.textContent = 'Enviado: ' + etiqueta;
+      state.pendingBlock = null;
+      sendMessage(texto);
+    };
+    okBtn.addEventListener('click', () => {
+      const detalle = campos.map((c) => c.campo + ' = ' + fmtValor(c.valor_propuesto)).join(', ');
+      decide('confirmo el registro de ' + nc.mensaje_id + (detalle ? ': ' + detalle : ''), 'aprobado');
+    });
+    noBtn.addEventListener('click', () => {
+      decide('rechazo el registro de ' + nc.mensaje_id, 'rechazado');
+    });
+
+    state.pendingBlock = { disable };
+    log.append(box);
+    scrollToEnd();
+  }
+
+  function askKey(retry) {
+    const wasSet = !!state.accessKey;
+    state.accessKey = '';
+    state.keyRejected = wasSet;
+    state.retry = retry;
+    $('keyHint').textContent = wasSet
+      ? 'La clave no es válida. Inténtalo de nuevo.'
+      : 'El servidor pide una clave de acceso para continuar.';
+    $('keyBox').hidden = false;
+    $('accessKey').focus();
+  }
+
+  $('keyForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const value = $('accessKey').value.trim();
+    if (!value) return;
+    state.accessKey = value;
+    $('accessKey').value = '';
+    $('keyBox').hidden = true;
+    const retry = state.retry;
+    state.retry = null;
+    if (retry) retry();
+  });
+  $('keyCancel').addEventListener('click', () => {
+    $('accessKey').value = '';
+    $('keyBox').hidden = true;
+    state.retry = null;
+  });
+
+  async function sendMessage(raw, opts) {
+    const display = !opts || opts.display !== false;
+    const text = String(raw).trim();
+    if (!text || state.busy) return false;
+    if (text.length > MAX_LEN) {
+      addError('El mensaje tiene ' + text.length + ' caracteres; el máximo es ' + MAX_LEN + '.');
+      return false;
+    }
+    setBusy(true);
+    if (display) addMessage({ role: 'user', text });
+    showThinking(true);
+
+    const body = { message: text };
+    if (state.sessionId) body.sessionId = state.sessionId;
+
+    try {
+      const data = await api('/api/chat', { method: 'POST', body: JSON.stringify(body) });
+      showThinking(false);
+      setBusy(false);
+      if (data.sessionId) { state.sessionId = data.sessionId; saveSession(data.sessionId); }
+      addMessage({
+        role: 'assistant',
+        text: data.reply,
+        toolCalls: data.toolCalls,
+        needsConfirmation: data.needsConfirmation
+      });
+      return true;
+    } catch (err) {
+      showThinking(false);
+      setBusy(false);
+      if (err.code === 'unauthorized') {
+        askKey(() => sendMessage(text, { display: false }));
+        return false;
+      }
+      if (err.code === 'not_found') { state.sessionId = ''; saveSession(''); }
+      addError(explainError(err));
+      return false;
+    }
+  }
+
+  async function restore() {
+    if (!state.sessionId) return;
+    try {
+      const data = await api('/api/sessions/' + encodeURIComponent(state.sessionId));
+      const msgs = Array.isArray(data.messages) ? data.messages : [];
+      for (const m of msgs) {
+        addMessage({ role: m.role, text: m.text, toolCalls: m.toolCalls, needsConfirmation: null });
+      }
+      if (data.pending) addConfirm(data.pending);
+    } catch (err) {
+      if (err.code === 'unauthorized') askKey(restore);
+      else if (err.code === 'not_found') { state.sessionId = ''; saveSession(''); }
+      else addError(explainError(err));
+    }
+  }
+
+  function welcome() {
+    log.append(el('div', { class: 'msg assistant' },
+      el('div', { class: 'role' }, 'Asistente'),
+      'Escribe el correo o el contrato que quieres registrar, o pregunta por el estado de un contrato.'));
+  }
+
+  $('composer').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const value = input.value;
+    if (!value.trim() || state.busy) return;
+    input.value = '';
+    sendMessage(value);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      $('composer').requestSubmit();
+    }
+  });
+  $('newChat').addEventListener('click', () => {
+    if (state.busy) return;
+    state.sessionId = '';
+    saveSession('');
+    state.pendingBlock = null;
+    state.thinking = null;
+    log.textContent = '';
+    welcome();
+  });
+
+  if (state.sessionId) restore();
+  else welcome();
+})();
+</script>
+</body>
+</html>
