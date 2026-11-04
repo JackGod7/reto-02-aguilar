@@ -163,8 +163,10 @@ function resolverPendiente(st: EstadoTurno, session: Session, mensajeId: string)
  * sondea registrar (sin confirmado: nunca escribe) para obtener los campos y fijar la pendiente.
  */
 async function sondearRevision(o: RunOpts, st: EstadoTurno, validar: RespuestaTool, mensajeId: string): Promise<void> {
-  const d = (validar.data ?? {}) as { requiere_revision?: unknown; clasificacion?: unknown };
-  const aplica = Array.isArray(d.requiere_revision) && d.requiere_revision.length > 0 && (d.clasificacion === "nuevo" || d.clasificacion === "actualizacion" || d.clasificacion === "duplicado");
+  const d = (validar.data ?? {}) as { requiere_revision?: unknown; clasificacion?: unknown; motivos_revision?: unknown };
+  // Un duplicado solo se sondea si la clasificación exige una decisión (destino, moneda, conflictos).
+  const decision = d.clasificacion === "duplicado" && d.motivos_revision !== null && typeof d.motivos_revision === "object" && Object.keys(d.motivos_revision).length > 0;
+  const aplica = Array.isArray(d.requiere_revision) && d.requiere_revision.length > 0 && (d.clasificacion === "nuevo" || d.clasificacion === "actualizacion" || decision);
   if (!aplica) return;
   const run = o.runTool ?? ejecutarTool;
   const sonda = parse(await run("contratos_registrar", { mensaje_id: mensajeId }, { directory: o.directory, sessionId: o.session.id }));

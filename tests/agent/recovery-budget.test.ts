@@ -63,7 +63,8 @@ test("A6: sesión previa + requestId recuperan POST perdido sin repetir herramie
   const estado = await (await fetch(`${e.base}/api/sessions/${sessionId}`)).json() as { messages: unknown[]; requests: Array<{ status: string }> };
   assert.equal(estado.messages.length, 2);
   assert.equal(estado.requests[0]?.status, "completed");
-  assert.ok(!JSON.stringify(estado.messages).includes("999"));
+  // Decisión de integración: el texto final del modelo se muestra; los hechos verificados van debajo, desde las tools.
+  assert.match(JSON.stringify(estado.messages.at(-1)), /dato inventado 999\\n\\nResultados de las herramientas\. Hecho: registrar \(nuevo CT-2026-015/);
   const conflicto = await e.post("/api/chat", { ...body, message: "otro" });
   assert.equal(conflicto.status, 409);
   const log = readFileSync(join(e.directory, "out/turnos.jsonl"), "utf8").trim().split("\n");
@@ -104,7 +105,7 @@ test("A8: uso desconocido retiene toda la reserva en sesión y servicio", async 
   assert.equal(log.reservedTokens, 40_000);
 });
 
-test("A7/A10: sin tools no publica hechos inventados; versión y diagnóstico no contienen conversación", async (t) => {
+test("A7/A10: sin tools el texto del modelo queda marcado como no verificado; versión y diagnóstico no contienen conversación", async (t) => {
   const buildSha = "1234567890abcdef1234567890abcdef12345678";
   // Marcador improbable: "999" aparecía al azar en UUIDs/timestamps de la respuesta (falso positivo intermitente).
   const INVENTADO = "987654321987";
@@ -116,7 +117,9 @@ test("A7/A10: sin tools no publica hechos inventados; versión y diagnóstico no
   const sessionId = await e.sesion();
   const response = await e.post("/api/chat", { sessionId, requestId: randomUUID(), message: "contenido privado del contrato" });
   assert.equal(response.status, 200);
-  assert.ok(!JSON.stringify(await response.json()).includes(INVENTADO));
+  const cuerpo = await response.json() as { reply: string; toolCalls: unknown[] };
+  assert.deepEqual(cuerpo.toolCalls, []);
+  assert.match(cuerpo.reply, new RegExp(`${INVENTADO}\\.\\n\\nSin datos verificados: no se ejecutó ninguna herramienta`));
   const log = readFileSync(join(e.directory, "out/turnos.jsonl"), "utf8");
   assert.ok(!log.includes("contenido privado"));
   assert.ok(!log.includes(INVENTADO));

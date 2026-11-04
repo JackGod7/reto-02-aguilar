@@ -52,7 +52,9 @@ test("LangGraph: pausa una cola serial y reanuda registro exacto antes del repor
   assert.deepEqual(segundo.toolCalls[0]?.args, { mensaje_id: "msg-006", hoy: "2026-09-03", confirmado: true, contrato: { valor: 0, fecha_fin: "2027-08-31" } });
   assert.match(readFileSync(join(e.directory, "out/alertas.md"), "utf8"), /CM-2026-03/);
   assert.equal(log(e.directory).filter((l) => l.herramienta === "registrar").length, 2, "sonda y aprobación, sin repetir la sonda al reanudar interrupt");
-  assert.ok(!segundo.reply.includes("999"));
+  // El texto final del modelo se muestra arriba; los hechos (valor 0 registrado) salen de las tools, debajo.
+  assert.ok(segundo.reply.startsWith("Registré valor 999\n\nResultados de las herramientas."), segundo.reply);
+  assert.match(segundo.reply, /registrar \(nuevo CM-2026-03/);
   assert.deepEqual(segundo.usage, { steps: 1, tokens: 7, known: true });
   const h = e.histories[1]!;
   for (let i = 0; i < h.length; i++) if (h[i]?.role === "tool") {

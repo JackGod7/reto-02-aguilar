@@ -32,6 +32,8 @@ interface Flujo {
   usageKnown: boolean;
   reply: string;
   stop: string;
+  /** El stop proviene de un tope (pasos, tokens, tiempo o herramientas): la respuesta lista lo que falta. */
+  limite: boolean;
 }
 const Estado = Annotation.Root({ flow: Annotation<Flujo>() });
 
@@ -89,8 +91,22 @@ function crearRevision(pedido: Pedido, campos: CampoRevision[], directory: strin
   const operacion: Revision["operacion"] = { name: "contratos_registrar", args };
   const sourceFingerprint = fingerprint(directory, String(a.mensaje_id));
   const valores = campos.map((c) => `${c.campo}=${JSON.stringify(c.valor_propuesto)}`).join(", ");
-  return { mensaje_id: String(a.mensaje_id), campos, reviewId: randomUUID(), operationHash: hash(operacion, campos, sourceFingerprint), sourceFingerprint, operacion,
-    pregunta: `El mensaje ${String(a.mensaje_id)} requiere revisión: ${valores}. ¿Confirmas el registro con estos valores?` };
+  const fecha = typeof args.hoy === "string" ? `Fecha de registro (hoy): ${args.hoy}.` : "Fecha de registro: la predeterminada del servidor.";
+  const reviewId = randomUUID();
+  const revision = { mensaje_id: String(a.mensaje_id), campos, reviewId, operationHash: hash(operacion, campos, sourceFingerprint), sourceFingerprint, operacion, pregunta: "" };
+  revision.pregunta = `El mensaje ${revision.mensaje_id} requiere revisión: ${valores}. ${fecha} ¿Confirmas el registro con estos valores? ${frasesAceptadas(revision)}`;
+  return revision;
+}
+/** Frase del PRD, solo si la revisión es exactamente valor + fecha_fin con valores bien formados. */
+function frasePRD(r: Pick<Revision, "campos">): { valor: number; fin: string } | null {
+  const valor = r.campos.find((c) => c.campo === "valor")?.valor_propuesto;
+  const fin = r.campos.find((c) => c.campo === "fecha_fin")?.valor_propuesto;
+  return r.campos.length === 2 && typeof valor === "number" && Number.isFinite(valor) && typeof fin === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fin) ? { valor, fin } : null;
+}
+function frasesAceptadas(r: Pick<Revision, "campos" | "reviewId" | "mensaje_id">): string {
+  const prd = frasePRD(r);
+  const aprobar = [...(prd ? [`"confirmo el valor ${prd.valor} y la fecha fin ${prd.fin}"`] : []), `"confirmo revisión ${r.reviewId}"`];
+  return `Para aprobar responde ${aprobar.join(" o ")}; para rechazar, "rechazo el registro de ${r.mensaje_id}".`;
 }
 
 /** Gramática cerrada: se compara el mensaje completo, nunca se buscan palabras de autorización.
@@ -99,23 +115,21 @@ function crearRevision(pedido: Pedido, campos: CampoRevision[], directory: strin
  */
 function decisionHumana(r: Revision, message: string): DecisionHumana | null {
   if (hash(r.operacion, r.campos, r.sourceFingerprint) !== r.operationHash) return null;
-  const texto = message.trim().normalize("NFC").toLowerCase();
+  // Normaliza solo forma (mayúsculas, espacios, punto/exclamación final); cualquier palabra extra sigue sin autorizar.
+  const texto = message.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!]+$/u, "").trim();
   const aprobaciones = [
     `confirmo revisión ${r.reviewId}`,
     `confirmo ${r.mensaje_id} (revisión ${r.reviewId})`,
   ];
-  const valor = r.campos.find((c) => c.campo === "valor")?.valor_propuesto;
-  const fin = r.campos.find((c) => c.campo === "fecha_fin")?.valor_propuesto;
-  if (r.campos.length === 2 && typeof valor === "number" && Number.isFinite(valor) &&
-      typeof fin === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fin)) {
-    aprobaciones.push(`confirmo el valor ${valor} y la fecha fin ${fin}`);
-  }
+  const prd = frasePRD(r);
+  const escapar = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const variantePRD = prd ? new RegExp(`^confirmo:? (?:el )?valor ${escapar(String(prd.valor))},? y (?:la )?fecha (?:de )?fin ${escapar(prd.fin)}$`, "u") : null;
   const rechazos = [
     `rechazo revisión ${r.reviewId}`,
     `rechazo el registro de ${r.mensaje_id}`,
     `no confirmo, cancela ${r.mensaje_id}`,
   ];
-  const approved = aprobaciones.includes(texto);
+  const approved = aprobaciones.includes(texto) || (variantePRD?.test(texto) ?? false);
   if (!approved && !rechazos.includes(texto)) return null;
   return { reviewId: r.reviewId, operationHash: r.operationHash, approved, message };
 }
@@ -131,10 +145,18 @@ function historialProveedor(history: MensajePaso[]): MensajePaso[] {
   }
   return salida;
 }
+const corto = (t: { name: string; resumen?: string }): string => `${t.name.replace(/^contratos_/, "")}${t.resumen ? ` (${t.resumen})` : ""}`;
+/** Datos visibles respaldados por herramientas (CA2); el texto libre del modelo va encima. */
 function resumenDeterminista(f: Flujo): string {
-  const hechos = f.toolCalls.filter((t) => t.ok).map((t) => `${t.name.replace(/^contratos_/, "")} (${t.resumen})`).join("; ");
-  const fallos = f.toolCalls.filter((t) => !t.ok).map((t) => `${t.name.replace(/^contratos_/, "")} (${t.resumen})`).join("; ");
-  return `${f.stop || (f.toolCalls.length ? "Resultados de las herramientas." : "El modelo no devolvió texto.")} Hecho: ${hechos || "nada completado"}.${fallos ? ` Pendiente: ${fallos}.` : ""}${f.queue.length ? " Hay herramientas pendientes; escribe 'continúa' para seguir." : ""}`;
+  const hechos = f.toolCalls.filter((t) => t.ok).map(corto).join("; ");
+  const fallos = f.toolCalls.filter((t) => !t.ok).map(corto);
+  if (f.limite) {
+    // CA1: como replyDeterminista de e735094, siempre dice qué falta y cómo seguir.
+    const falta = [...fallos, ...f.queue.map(corto), ...(f.review ? [`confirmación de ${f.review.mensaje_id}`] : [])];
+    return `${f.stop} Hecho: ${hechos || "nada completado"}. Falta: ${falta.join("; ") || "el resto del lote"}. Escribe 'continúa' para seguir.`;
+  }
+  if (!f.toolCalls.length) return `${f.stop ? `${f.stop} ` : ""}Sin datos verificados: no se ejecutó ninguna herramienta en este turno.`;
+  return `${f.stop || "Resultados de las herramientas."} Hecho: ${hechos || "nada completado"}.${fallos.length ? ` Pendiente: ${fallos.join("; ")}.` : ""}${f.queue.length && !f.review ? " Hay herramientas pendientes; escribe 'continúa' para seguir." : ""}`;
 }
 export class ErrorTurnoGrafo extends Error {
   readonly partial: RunResult;
@@ -189,12 +211,23 @@ async function turno(o: RunOpts): Promise<RunResult> {
     });
     return { ...f, queue: [], toolCalls: [...f.toolCalls, ...calls], history: [...f.history, ...pedidos.map((p): MensajePaso => ({ role: "tool", toolCallId: p.id, content: JSON.stringify({ ok: false, error: motivo }) }))] };
   }
+  /** Tras un registro aprobado, los registrar en cola del mismo mensaje no se ejecutan ni vuelven a pedir revisión. */
+  function omitirRegistrados(f: Flujo, mensajeId: string): Flujo {
+    // Solo llamadas simples: un intento del modelo de autorizar (confirmado/contrato) sigue pasando por el veto auditado.
+    const omitidos = f.queue.filter((p) => { const a = objeto(p.args); return p.name === "contratos_registrar" && a.mensaje_id === mensajeId && a.confirmado === undefined && a.contrato === undefined; });
+    if (!omitidos.length) return f;
+    const motivo = `omitido: ${mensajeId} ya quedó registrado con la aprobación de la persona`;
+    return { ...f, queue: f.queue.filter((p) => !omitidos.includes(p)),
+      toolCalls: [...f.toolCalls, ...omitidos.map((p): ToolCallInfo => ({ id: p.id, name: p.name, args: structuredClone(p.args), ok: true, resumen: motivo }))],
+      history: [...f.history, ...omitidos.map((p): MensajePaso => ({ role: "tool", toolCallId: p.id, content: JSON.stringify({ ok: true, data: { mensaje_id: mensajeId, accion: "omitido", motivo } }) }))] };
+  }
   const builder = new StateGraph(Estado)
     .addNode("inicio", ({ flow }) => guardar(flow))
     .addNode("modelo", async ({ flow }) => {
-      if (flow.steps >= maxSteps || o.session.tokens + flow.tokens >= o.maxTokens || Date.now() >= deadline) {
-        return guardar({ ...flow, stop: `Alcancé el tope de ${maxSteps} pasos, tokens o tiempo.` });
-      }
+      const tope = flow.steps >= maxSteps ? `Alcancé el tope de ${maxSteps} pasos.`
+        : o.session.tokens + flow.tokens >= o.maxTokens ? "Alcancé el tope de tokens del turno."
+        : Date.now() >= deadline ? "Alcancé el tope de tiempo del turno." : "";
+      if (tope) return guardar({ ...flow, stop: tope, limite: true });
       const history = historialProveedor(flow.history);
       // Para el transporte textual, los bytes UTF-8 más margen de framing son una
       // cota conservadora de entrada; no se presenta como consumo medido.
@@ -225,10 +258,14 @@ async function turno(o: RunOpts): Promise<RunResult> {
       }
       const calls = structuredClone(paso.llamadas);
       const siguienteHistory: MensajePaso[] = [...flow.history, { role: "assistant", content: paso.texto, ...(calls.length ? { toolCalls: calls } : {}) }];
-      return guardar({ ...actualizado, history: siguienteHistory, queue: calls, reply: "", last: null });
+      // Sin llamadas, el texto es la respuesta final del modelo y se muestra (sobre el resumen de tools).
+      return guardar({ ...actualizado, history: siguienteHistory, queue: calls, reply: calls.length ? "" : paso.texto, last: null });
     })
     .addNode("herramienta", async ({ flow }) => {
-      if (flow.toolCalls.length >= maxTools || Date.now() >= deadline) return guardar({ ...cancelarPedidos(flow, flow.queue, "Solicitud cancelada: tope de herramientas o tiempo."), stop: "Alcancé el tope de herramientas o tiempo." });
+      if (flow.toolCalls.length >= maxTools || Date.now() >= deadline) {
+        const tope = flow.toolCalls.length >= maxTools ? `Alcancé el tope de ${maxTools} herramientas.` : "Alcancé el tope de tiempo del turno.";
+        return guardar({ ...cancelarPedidos(flow, flow.queue, `Solicitud cancelada: ${tope.replace(/^Alcancé el /, "").replace(/\.$/, "")}.`), stop: tope, limite: true });
+      }
       const pedido = flow.queue[0];
       if (!pedido) return guardar(flow);
       return guardar(await ejecutar({ ...flow, queue: flow.queue.slice(1) }, pedido));
@@ -243,8 +280,10 @@ async function turno(o: RunOpts): Promise<RunResult> {
       }
       const d = objeto(respuesta.data);
       const a = objeto(pedido.args);
-      if (pedido.name === "contratos_validar" && respuesta.ok && typeof a.mensaje_id === "string" && Array.isArray(d.requiere_revision) && d.requiere_revision.length > 0 && (d.clasificacion === "nuevo" || d.clasificacion === "actualizacion" || d.clasificacion === "duplicado")) {
-        const sonda: Pedido = { id: `sonda-${randomUUID()}`, name: "contratos_registrar", args: { mensaje_id: a.mensaje_id }, sonda: true };
+      if (pedido.name === "contratos_validar" && respuesta.ok && typeof a.mensaje_id === "string" && Array.isArray(d.requiere_revision) && d.requiere_revision.length > 0 && (d.clasificacion === "nuevo" || d.clasificacion === "actualizacion" || (d.clasificacion === "duplicado" && Object.keys(objeto(d.motivos_revision)).length > 0))) {
+        // El hoy aprobado sale del registrar que el modelo dejó en cola para ese mensaje, si existe.
+        const hoy = flow.queue.filter((p) => p.name === "contratos_registrar").map((p) => objeto(p.args)).find((x) => x.mensaje_id === a.mensaje_id && typeof x.hoy === "string")?.hoy;
+        const sonda: Pedido = { id: `sonda-${randomUUID()}`, name: "contratos_registrar", args: { mensaje_id: a.mensaje_id, ...(typeof hoy === "string" ? { hoy } : {}) }, sonda: true };
         // La sonda es una llamada visible; también conserva historial assistant/tool bien formado.
         return guardar({ ...flow, queue: [sonda, ...flow.queue], last: null, history: [...flow.history, { role: "assistant", content: "Sonda del servidor para obtener la revisión humana.", toolCalls: [sonda] }] });
       }
@@ -270,7 +309,8 @@ async function turno(o: RunOpts): Promise<RunResult> {
       const contrato = Object.fromEntries(r.campos.map((c) => [c.campo, structuredClone(c.valor_propuesto)]));
       const pedido: Pedido = { id: `aprobacion-${r.reviewId}`, name: r.operacion.name, args: { ...structuredClone(r.operacion.args), contrato, confirmado: true } };
       const conPedido = { ...flow, history: [...flow.history, { role: "assistant" as const, content: "Registro autorizado por la persona para el snapshot mostrado.", toolCalls: [pedido] }] };
-      return guardar({ ...await ejecutar(conPedido, pedido, true), review: null, decision: null });
+      const hecho = await ejecutar(conPedido, pedido, true);
+      return guardar({ ...(hecho.last?.respuesta.ok ? omitirRegistrados(hecho, r.mensaje_id) : hecho), review: null, decision: null });
     })
     .addEdge(START, "inicio")
     .addConditionalEdges("inicio", ({ flow }) => flow.queue.length ? "herramienta" : "modelo", ["herramienta", "modelo"])
@@ -285,7 +325,7 @@ async function turno(o: RunOpts): Promise<RunResult> {
   const previo = await graph.getState(config);
   const anterior = previo.values.flow as Flujo | undefined;
   const history = anterior?.history ?? o.session.messages.map((m): MensajePaso => ({ role: m.role, content: m.text }));
-  const reinicio: Flujo = { history, queue: anterior?.queue ?? [], review: anterior?.review ?? null, decision: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "" };
+  const reinicio: Flujo = { history, queue: anterior?.queue ?? [], review: anterior?.review ?? null, decision: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "", limite: false };
   actual = reinicio;
   o.session.messages.push({ role: "user", text: o.message, ts: new Date().toISOString() });
   let fallo: unknown;
@@ -293,7 +333,7 @@ async function turno(o: RunOpts): Promise<RunResult> {
     let input: Parameters<typeof graph.invoke>[0];
     if (reinicio.review && previo.next.includes("pausa")) {
       const decision = decisionHumana(reinicio.review, o.message);
-      if (!decision) return finalizar({ ...reinicio, reply: "La respuesta no coincide con una decisión completa. Usa el botón Aprobar o Rechazar, o envía únicamente la confirmación indicada." });
+      if (!decision) return finalizar({ ...reinicio, reply: `No registré nada: tu mensaje no es una decisión sobre ${reinicio.review.mensaje_id} y la revisión sigue pendiente. Usa el botón Aprobar o Rechazar, o envía solo una de las frases aceptadas. ${frasesAceptadas(reinicio.review)}` });
       input = new Command<DecisionHumana, { flow: Flujo }, never>({ resume: decision, update: { flow: reinicio } });
     } else input = { flow: { ...reinicio, history: [...reinicio.history, { role: "user", content: o.message }] } };
     const invocar = traceable(async () => graph.invoke(input, config), { name: "turno-contratos-local", tracingEnabled: false });
@@ -313,8 +353,10 @@ async function turno(o: RunOpts): Promise<RunResult> {
     // Expone solo el snapshot para presentación. La operación autorizable vive en el checkpoint.
     const pending: NeedsConfirmation | null = f.review ? { mensaje_id: f.review.mensaje_id, campos: structuredClone(f.review.campos), pregunta: f.review.pregunta, reviewId: f.review.reviewId, operationHash: f.review.operationHash } : null;
     o.session.pending = pending;
-    const baseReply = f.toolCalls.length ? resumenDeterminista(f) : f.stop || !f.reply ? resumenDeterminista(f) : f.reply;
-    const reply = pending ? `${f.toolCalls.length || f.reply ? `${baseReply}\n` : ""}${pending.pregunta}` : baseReply;
+    // Texto final del modelo arriba; debajo, los datos respaldados por tools. Topes y fallos: solo determinista.
+    const herramientas = pending && !f.toolCalls.length && !f.limite ? "" : resumenDeterminista(f);
+    const baseReply = f.reply && !f.stop ? [f.reply, herramientas].filter(Boolean).join("\n\n") : herramientas;
+    const reply = pending ? [baseReply, pending.pregunta].filter(Boolean).join("\n") : baseReply;
     o.session.messages.push({ role: "assistant", text: reply, toolCalls: structuredClone(f.toolCalls), ts: new Date().toISOString() });
     return { reply, toolCalls: f.toolCalls, needsConfirmation: pending, usage: { steps: f.steps, tokens: f.tokens, known: f.usageKnown } };
   }
