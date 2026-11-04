@@ -109,8 +109,9 @@ export function crearServidor(o: ServerOpts): Server {
   function ipCliente(req: IncomingMessage): string {
     if (confiaProxy) {
       const xff = req.headers["x-forwarded-for"];
-      const primera = (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim();
-      if (primera) return primera;
+      // El proxy de confianza (Render) AÑADE la IP real al final; las entradas previas las controla el cliente.
+      const ultima = (Array.isArray(xff) ? xff[xff.length - 1] : xff)?.split(",").pop()?.trim();
+      if (ultima) return ultima;
     }
     return req.socket.remoteAddress ?? "?";
   }

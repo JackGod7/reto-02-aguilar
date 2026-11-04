@@ -92,3 +92,37 @@ test("gate de sesión: confirmación del usuario, pendiente por mensaje_id y ove
   await ejecutarTurno({ ...base, adapter: bueno, message: "confirmo el valor 0 y la fecha fin 2027-08-31" });
   assert.equal(s.pending, null);
 });
+
+test("P1-A: no se confirma en el mismo turno una revisión que la persona no vio", async () => {
+  const ctx = nuevoDir();
+  const s = crearSesion();
+  const base = { directory: ctx.directory, prompt: "p", maxTokens: 100, session: s, runTool: ejecutarTool };
+  const antes = maestroCrudo(ctx.directory);
+  const mismoTurno = adapterGuion(async (h) => {
+    await h.contratos_validar!.execute({ mensaje_id: "msg-006" });
+    const r = j(await h.contratos_registrar!.execute({ mensaje_id: "msg-006", hoy: HOY, confirmado: true }));
+    assert.equal(r.ok, false);
+  });
+  await ejecutarTurno({ ...base, adapter: mismoTurno, message: "ok, procesa el mensaje 006" });
+  assert.equal(maestroCrudo(ctx.directory), antes);
+  assert.equal(s.pending?.mensaje_id, "msg-006");
+});
+
+test("P1-B: con varios pendientes, la confirmación debe nombrar el mensaje_id", async () => {
+  const ctx = nuevoDir();
+  const s = crearSesion();
+  const base = { directory: ctx.directory, prompt: "p", maxTokens: 100, session: s, runTool: ejecutarTool };
+  s.pending = { mensaje_id: "msg-009", campos: [{ campo: "valor", valor_propuesto: 0, confianza: 0.5, motivo: "x" }], pregunta: "?" };
+  const sonda = adapterGuion(async (h) => { await h.contratos_validar!.execute({ mensaje_id: "msg-006" }); });
+  await ejecutarTurno({ ...base, adapter: sonda, message: "procesa 006" });
+  const vago = adapterGuion(async (h) => {
+    const r = j(await h.contratos_registrar!.execute({ mensaje_id: "msg-006", hoy: HOY, confirmado: true }));
+    assert.equal(r.ok, false);
+  });
+  await ejecutarTurno({ ...base, adapter: vago, message: "ok, confirmo el valor 0 de 2027" });
+  const explicito = adapterGuion(async (h) => {
+    const r = j(await h.contratos_registrar!.execute({ mensaje_id: "msg-006", hoy: HOY, confirmado: true }));
+    assert.equal(r.ok, true, r.error ?? "");
+  });
+  await ejecutarTurno({ ...base, adapter: explicito, message: "confirmo msg-006" });
+});

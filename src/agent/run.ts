@@ -34,13 +34,9 @@ function ultima(m: Map<string, NeedsConfirmation>): NeedsConfirmation | null {
   return [...m.values()].pop() ?? null;
 }
 
-/** La confirmación debe estar ligada: único pendiente, o el texto menciona el mensaje_id o un valor propuesto. */
+/** La confirmación debe estar ligada: con un único pendiente basta confirmar; con varios, el texto debe nombrar el mensaje_id. */
 function confirmaPara(texto: string, p: NeedsConfirmation, total: number): boolean {
-  if (total === 1 || texto.includes(p.mensaje_id)) return true;
-  return p.campos.some((c) => {
-    const v = c.valor_propuesto;
-    return (typeof v === "string" || typeof v === "number") && String(v) !== "" && texto.includes(String(v));
-  });
+  return total === 1 || texto.includes(p.mensaje_id);
 }
 
 export function usuarioConfirma(texto: string): boolean {
@@ -83,6 +79,8 @@ export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
   const { session, message } = o;
   const confirma = usuarioConfirma(message);
   const pend = mapaPend(session);
+  // Solo se puede confirmar una revisión que la persona ya vio en un turno anterior (no la que se crea en este turno).
+  const previos = new Set(pend.keys());
   if (pend.size > 0 && RECHAZA.test(message) && !confirma) {
     pend.clear();
     session.pending = null;
@@ -97,10 +95,10 @@ export async function ejecutarTurno(o: RunOpts): Promise<RunResult> {
     let salida: string;
     const a = (args && typeof args === "object" ? (args as Record<string, unknown>) : {}) as Record<string, unknown>;
     if (name === "contratos_registrar" && a.confirmado === true) {
-      const p = typeof a.mensaje_id === "string" ? pend.get(a.mensaje_id) : undefined;
+      const p = typeof a.mensaje_id === "string" && previos.has(a.mensaje_id) ? pend.get(a.mensaje_id) : undefined;
       const claves = a.contrato && typeof a.contrato === "object" ? Object.keys(a.contrato) : [];
       const fuera = p ? claves.filter((k) => !p.campos.some((c) => c.campo === k)) : claves;
-      if (!(p && confirma && confirmaPara(message, p, pend.size))) {
+      if (!(p && confirma && confirmaPara(message, p, previos.size))) {
         salida = JSON.stringify({
           ok: false,
           error: "confirmado:true rechazado: no hay revisión pendiente para ese mensaje_id o el usuario no ha confirmado explícitamente ese mensaje",
