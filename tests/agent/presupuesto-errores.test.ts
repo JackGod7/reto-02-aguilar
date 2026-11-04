@@ -49,3 +49,27 @@ test("Regresión 5: sin ANTHROPIC_API_KEY responde 503 antes de reservar, sin tu
   }
   assert.ok(!existsSync(join(s.directory, "out/turnos.jsonl")));
 });
+
+test("Prompt caching: el uso cacheado se suma por pasos y queda en la respuesta y en out/turnos.jsonl", async (t) => {
+  let paso = 0;
+  const adapter: LLMAdapter = {
+    provider: "mock", model: "mock",
+    async generarPaso() {
+      paso++;
+      return paso === 1
+        ? { texto: "", llamadas: [{ id: "c1", name: "contratos_leer_buzon", args: {} }], tokens: 2600, usoConocido: true, cache: { creacion: 2500, lectura: 0 } }
+        : { texto: "Listo.", llamadas: [], tokens: 2700, usoConocido: true, cache: { creacion: 0, lectura: 2500 } };
+    },
+  };
+  const s = await servidor(t, adapter, { maxSessionTokens: 40_000, maxDailyTokens: 400_000 });
+  const r = await s.chat({ message: "procesa el buzón" });
+  assert.equal(r.status, 200);
+  const cuerpo = await r.json() as { usage: Record<string, unknown> };
+  assert.equal(cuerpo.usage.tokens, 5300);
+  assert.equal(cuerpo.usage.cacheCreationInputTokens, 2500);
+  assert.equal(cuerpo.usage.cacheReadInputTokens, 2500);
+  const turno = JSON.parse(readFileSync(join(s.directory, "out/turnos.jsonl"), "utf8").trim()) as Record<string, unknown>;
+  assert.equal(turno.tokens, 5300);
+  assert.equal(turno.cacheCreationInputTokens, 2500);
+  assert.equal(turno.cacheReadInputTokens, 2500);
+});

@@ -273,7 +273,7 @@ export function crearServidor(o: ServerOpts): Server {
         // Solo metadatos operativos: sin texto, argumentos, documentos ni errores del SDK.
         try {
           mkdirSync(dirs(directory).out, { recursive: true });
-          appendFileSync(join(dirs(directory).out, "turnos.jsonl"), JSON.stringify({ ts: new Date().toISOString(), sessionId: session.id, requestId: requestId ?? randomUUID(), buildSha, provider: o.adapter.provider, model: o.adapter.model, status, latencyMs: Date.now() - inicio, steps: resultado?.usage.steps ?? null, tokens: known ? conocidos : null, knownTokens: conocidos, usageKnown: known, reservedTokens: retenidos, outcome: status >= 500 ? "provider_error" : resultado?.needsConfirmation ? "review" : resultado?.toolCalls.some((c) => !c.ok) ? "tool_error" : "complete" }) + "\n");
+          appendFileSync(join(dirs(directory).out, "turnos.jsonl"), JSON.stringify({ ts: new Date().toISOString(), sessionId: session.id, requestId: requestId ?? randomUUID(), buildSha, provider: o.adapter.provider, model: o.adapter.model, status, latencyMs: Date.now() - inicio, steps: resultado?.usage.steps ?? null, tokens: known ? conocidos : null, knownTokens: conocidos, usageKnown: known, cacheCreationInputTokens: resultado?.usage.cacheCreationInputTokens ?? null, cacheReadInputTokens: resultado?.usage.cacheReadInputTokens ?? null, reservedTokens: retenidos, outcome: status >= 500 ? "provider_error" : resultado?.needsConfirmation ? "review" : resultado?.toolCalls.some((c) => !c.ok) ? "tool_error" : "complete" }) + "\n");
         } catch { /* un fallo diagnóstico no repite los efectos */ }
       }
     }

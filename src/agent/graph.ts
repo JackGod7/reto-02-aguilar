@@ -40,6 +40,8 @@ const Estado = Annotation.Root({
   incierto: Annotation<number>(),
   /** El proveedor respondió sin informar uso: no hay cota y el servidor retiene la reserva. */
   usoSinInformar: Annotation<boolean>(),
+  /** Tokens de entrada escritos/leídos de la caché de prompt en el turno (incluidos en tokens); null si el proveedor no lo informa. */
+  cache: Annotation<{ creacion: number; lectura: number } | null>(),
 });
 type Flujo = typeof Estado.State;
 type Cambio = Partial<Flujo>;
@@ -58,7 +60,7 @@ export interface RunResult {
   toolCalls: ToolCallInfo[];
   needsConfirmation: NeedsConfirmation | null;
   /** uncertain: cota de tokens de llamadas que fallaron antes de devolver respuesta (solo si known es false). */
-  usage: { steps: number; tokens: number; known?: boolean; uncertain?: number };
+  usage: { steps: number; tokens: number; known?: boolean; uncertain?: number; cacheCreationInputTokens?: number; cacheReadInputTokens?: number };
 }
 
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -305,7 +307,8 @@ async function nodoModelo(s: Flujo, config: LangGraphRunnableConfig): Promise<Ca
   } finally { if (timer) clearTimeout(timer); }
   const valido = Number.isFinite(paso.tokens) && paso.tokens >= 0;
   const tokens = s.tokens + (valido ? paso.tokens : 0);
-  const uso: Cambio = { steps: s.steps + 1, tokens, incierto: s.incierto, usoSinInformar: s.usoSinInformar || !paso.usoConocido, usageKnown: s.usageKnown && paso.usoConocido && valido };
+  const uso: Cambio = { steps: s.steps + 1, tokens, incierto: s.incierto, usoSinInformar: s.usoSinInformar || !paso.usoConocido, usageKnown: s.usageKnown && paso.usoConocido && valido,
+    cache: paso.cache ? { creacion: (s.cache?.creacion ?? 0) + paso.cache.creacion, lectura: (s.cache?.lectura ?? 0) + paso.cache.lectura } : s.cache };
   guardar(t, uso);
   if (!paso.usoConocido) throw new Error("El proveedor no informó uso de tokens; turno detenido");
   if (tokens > o.maxTokens - o.session.tokens) return guardar(t, { ...uso, stop: "El proveedor informó un uso superior al presupuesto; no ejecuté sus herramientas." });
@@ -416,7 +419,7 @@ async function turno(o: RunOpts): Promise<RunResult> {
   const previo = await grafo.getState(config);
   const anterior = previo.values as Partial<Flujo>;
   const history = anterior.history ?? o.session.messages.map((m): MensajePaso => ({ role: m.role, content: m.text }));
-  const reinicio: Flujo = { history, queue: anterior.queue ?? [], review: anterior.review ?? null, respuestaHumana: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "", limite: false, incierto: 0, usoSinInformar: false };
+  const reinicio: Flujo = { history, queue: anterior.queue ?? [], review: anterior.review ?? null, respuestaHumana: null, last: null, toolCalls: [], steps: 0, tokens: 0, usageKnown: true, reply: "", stop: "", limite: false, incierto: 0, usoSinInformar: false, cache: null };
   const t: Turno = { o, maxSteps, maxTools, maxOutput: positivo(process.env.LLM_MAX_OUTPUT_TOKENS, 4096, 32_768), deadline: Date.now() + positivo(process.env.LLM_TIMEOUT_MS, 60_000, 600_000), actual: reinicio };
   turnos.set(o.session.id, t);
   o.session.messages.push({ role: "user", text: o.message, ts: new Date().toISOString() });
@@ -446,5 +449,5 @@ function finalizar(o: RunOpts, f: Flujo): RunResult {
   const baseReply = f.reply && !f.stop ? [f.reply, resumen].filter(Boolean).join("\n\n") : resumen;
   const reply = pending ? [baseReply, pending.pregunta].filter(Boolean).join("\n") : baseReply;
   o.session.messages.push({ role: "assistant", text: reply, toolCalls: structuredClone(f.toolCalls), ts: new Date().toISOString() });
-  return { reply, toolCalls: f.toolCalls, needsConfirmation: pending, usage: { steps: f.steps, tokens: f.tokens, known: f.usageKnown, ...(!f.usageKnown && !f.usoSinInformar ? { uncertain: f.incierto } : {}) } };
+  return { reply, toolCalls: f.toolCalls, needsConfirmation: pending, usage: { steps: f.steps, tokens: f.tokens, known: f.usageKnown, ...(f.cache ? { cacheCreationInputTokens: f.cache.creacion, cacheReadInputTokens: f.cache.lectura } : {}), ...(!f.usageKnown && !f.usoSinInformar ? { uncertain: f.incierto } : {}) } };
 }
