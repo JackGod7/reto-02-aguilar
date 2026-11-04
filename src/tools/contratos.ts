@@ -293,14 +293,19 @@ function registrarSync(args: unknown, ctx: ToolContext): Resultado {
       resumen: "rechazado, sin escritura", ok: true,
     };
   }
-  if (val.requiere_revision.length > 0 && (p.confirmado !== true || val.bloqueo_registro)) return resultadoRevision(a, c);
-  if (val.clasificacion === "duplicado" || (val.clasificacion === "actualizacion" && Object.keys(val.diferencias ?? {}).length === 0)) {
+  const duplicado = (): Resultado => {
     marcarProcesado(ctx.directory, p.mensaje_id);
     return {
       respuesta: ok({ id_contrato: val.id_contrato_existente ?? c.id_contrato, accion: "duplicado", ruta_archivo: null }),
       resumen: `duplicado ${c.id_contrato}, sin escritura`, ok: true,
     };
-  }
+  };
+  // Como e735094: un duplicado ya coincide con el maestro, así que la incertidumbre de extracción no
+  // decide nada (un mensaje ya registrado no vuelve a pedir revisión). Solo las decisiones de
+  // clasificación (destino, moneda, conflictos: motivos_revision) se muestran antes de descartarlo.
+  if (val.clasificacion === "duplicado" && Object.keys(val.motivos_revision ?? {}).length === 0) return duplicado();
+  if (val.requiere_revision.length > 0 && (p.confirmado !== true || val.bloqueo_registro)) return resultadoRevision(a, c);
+  if (val.clasificacion === "duplicado" || (val.clasificacion === "actualizacion" && Object.keys(val.diferencias ?? {}).length === 0)) return duplicado();
   const ausentes = val.requiere_revision.filter((campo) => c.confianza[campo] === 0 && p.contrato?.[campo] === undefined);
   if (ausentes.length > 0) return rechazo(`datos incompletos: corrige los campos ausentes (${ausentes.join(", ")})`, "campos ausentes sin corregir");
   if (!datosCompletos(c)) return rechazo("datos incompletos: id_contrato, cliente y fechas son obligatorios", "datos incompletos");
