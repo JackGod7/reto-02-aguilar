@@ -122,6 +122,27 @@ La demo no se usa con datos reales hasta cumplir, en este orden, y con prueba de
 5. **Operación**: límites de gasto persistentes, logs estructurados y alertas; backup restaurado en un ensayo y reversión de despliegue probada.
 6. **Evaluación**: modo shadow sobre corpus autorizado comparado con el registro humano (precisión por campo, falsos limpios, minutos humanos y coste por operación) antes de habilitar escrituras asistidas.
 
+## Trazabilidad código → PRD
+
+Una fila por historia o regla; el detalle por criterio, con resultados de evals reales, está en `evals/MATRIZ.md`.
+
+| PRD | Código (archivo:línea) | Test |
+|---|---|---|
+| HU-1 leer buzón | `src/tools/contratos.ts:142` | `tests/core/tools.test.ts:37` |
+| HU-2 extraer con confianza | `src/tools/contratos.ts:165` | `tests/core/tools.test.ts:44`, `tests/core/extraccion-prd.test.ts` |
+| HU-3 validar y clasificar (RN1–RN4) | `src/tools/contratos.ts:189`, `src/domain/reglas.ts:70` | `tests/core/clasificacion.test.ts:25` |
+| HU-4 registrar y archivar | `src/tools/contratos.ts:221` | `tests/core/tools.test.ts:90` |
+| HU-5 alertas | `src/tools/contratos.ts:368`, `src/domain/alertas.ts:22` | `tests/core/tools.test.ts:90` |
+| HU-6 errores sin abortar el lote | `src/tools/contratos.ts:64`, `src/agent/registry.ts` | `tests/core/extraccion-prd.test.ts:46` |
+| RN5 baja confianza exige confirmación humana | `src/tools/contratos.ts:263`, `src/agent/graph.ts:137` (revisión), `:166` (frase), `:246` (veto al modelo), `:373` (registro aprobado) | `tests/agent/langgraph-flow.test.ts:64,75`, `tests/agent/hitl-adversarial.test.ts:53`, `tests/agent/regresiones-demo.test.ts:52` |
+| RN6 solo escribe en `out/` | `src/infra/rutas.ts:15`, `src/infra/maestro.ts:16` | `tests/core/tools.test.ts:159,170` |
+| RN7 / CA4 log de cada tool | `src/infra/registros.ts:47` | `tests/agent/langgraph-flow.test.ts:180` |
+| RN1 idempotencia por requestId | `src/server.ts:233` | `tests/agent/recovery-budget.test.ts:30` |
+| CA5 fallo del proveedor (502, sesión viva, cobro acotado) | `src/server.ts:263`, `:272` | `tests/agent/langgraph-api.test.ts:82`, `tests/agent/presupuesto-errores.test.ts:23` |
+| §8 topes de gasto, rate limit, ACCESS_KEY | `src/server.ts:177,178,224,238` | `tests/agent/server-hardening.test.ts:31,47` |
+| §8 inyección CSV | `src/domain/csv.ts:2` | `tests/core/dominio.test.ts:43` |
+| Observabilidad (no PRD) | `src/infra/log.ts` | `tests/core/log.test.ts` |
+
 ## 10. Uso de IA
 
 **Asistentes usados para construir**: Claude Code (modelos Haiku, Sonnet y Opus, según la tarea) para el scaffold, el núcleo de dominio, el agente, la interfaz, la documentación y la revisión final. Gemini se usó para una primera propuesta de arquitectura.
