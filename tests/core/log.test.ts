@@ -20,10 +20,10 @@ test("Dado un evento con campos, Cuando se registra, Entonces sale una sola lín
 
 test("Dado ANTHROPIC_API_KEY en el entorno, Cuando se registra un evento, Entonces la línea no contiene la clave", () => {
   const previa = process.env.ANTHROPIC_API_KEY;
-  process.env.ANTHROPIC_API_KEY = "sk-ant-secreto-de-prueba";
+  process.env.ANTHROPIC_API_KEY = "clave-falsa-de-prueba";
   try {
     const salida = capturar(() => log("warn", "tool", { herramienta: "contratos_extraer", ok: false }));
-    assert.ok(!salida.includes("sk-ant-secreto-de-prueba"));
+    assert.ok(!salida.includes("clave-falsa-de-prueba"));
   } finally {
     if (previa === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = previa;
   }
