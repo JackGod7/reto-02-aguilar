@@ -93,13 +93,22 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
 
   const MAX_LEN = 2000;
   const KEY_SESSION = 'contratos.sessionId';
+  const SESION_EXPIRADA = 'La sesión expiró (el servicio se reinició); empecé una nueva.';
+  // Códigos reales del servidor (src/server.ts): {error:{code,message}}.
   const ERRORES = {
     unauthorized: 'La clave de acceso no es válida o falta.',
-    not_found: 'La sesión ya no existe. Se iniciará una nueva conversación.',
-    invalid_request: 'El mensaje no es válido (vacío o demasiado largo).',
-    rate_limited: 'Demasiadas solicitudes seguidas. Espera un momento y vuelve a intentarlo.',
+    session_not_found: SESION_EXPIRADA,
+    bad_request: 'El mensaje no es válido (vacío o falta el texto).',
+    bad_json: 'La solicitud no tiene un formato válido. Recarga la página e inténtalo de nuevo.',
+    message_too_long: 'El mensaje es demasiado largo. Acórtalo e inténtalo de nuevo.',
+    too_large: 'El mensaje es demasiado grande. Acórtalo e inténtalo de nuevo.',
+    rate_limited: 'Demasiadas solicitudes seguidas. Espera un minuto y vuelve a intentarlo.',
+    token_limit: 'Esta conversación alcanzó su límite. Pulsa «Nueva conversación» para seguir.',
+    busy: 'Todavía estoy procesando el mensaje anterior. Espera un momento.',
     llm_error: 'El modelo no pudo responder. Inténtalo de nuevo.',
-    internal_error: 'Ocurrió un error interno en el servidor.',
+    internal: 'Ocurrió un error interno en el servidor.',
+    not_found: 'No se encontró el recurso solicitado.',
+    method_not_allowed: 'Operación no permitida.',
     network: 'No se pudo conectar con el servidor. Revisa tu conexión.'
   };
 
@@ -225,6 +234,21 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
     scrollToEnd();
   }
 
+  function addNotice(text) {
+    log.append(el('div', { class: 'msg assistant', role: 'status' }, text));
+    scrollToEnd();
+  }
+
+  function clearSession() {
+    state.sessionId = '';
+    saveSession('');
+  }
+
+  // El servidor guarda las sesiones en memoria: tras un reinicio o un sueño del plan Free, el id guardado da session_not_found.
+  function isSessionGone(err) {
+    return !!err && err.code === 'session_not_found';
+  }
+
   function addConfirm(nc) {
     if (state.pendingBlock) state.pendingBlock.disable();
 
@@ -335,7 +359,13 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
         askKey(() => sendMessage(text, { display: false }));
         return false;
       }
-      if (err.code === 'not_found') { state.sessionId = ''; saveSession(''); }
+      if (isSessionGone(err) && body.sessionId && !(opts && opts.fresh)) {
+        // Reintento automático una sola vez, sin sesión, con el mismo mensaje.
+        clearSession();
+        addNotice(SESION_EXPIRADA);
+        return sendMessage(text, { display: false, fresh: true });
+      }
+      if (isSessionGone(err)) clearSession();
       addError(explainError(err));
       return false;
     }
@@ -352,8 +382,11 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
       if (data.pending) addConfirm(data.pending);
     } catch (err) {
       if (err.code === 'unauthorized') askKey(restore);
-      else if (err.code === 'not_found') { state.sessionId = ''; saveSession(''); }
-      else addError(explainError(err));
+      else if (isSessionGone(err)) {
+        clearSession();
+        addNotice(SESION_EXPIRADA);
+        welcome();
+      } else addError(explainError(err));
     }
   }
 
