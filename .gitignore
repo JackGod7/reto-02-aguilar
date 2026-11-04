@@ -3,3 +3,5 @@ out/
 .env
 plan/fuentes/*.zip
 plan/fuentes/
+plan/CONTINUAR.md
+plan/PROGRESO.md
