@@ -78,7 +78,8 @@ export function resumir(name: string, r: RespuestaTool, args?: unknown): string 
     }
     case "validar": {
       const rev = arr(d.requiere_revision);
-      return `${str(d.clasificacion)}; en revisión: ${rev.length > 0 ? rev.join(", ") : "ninguno"}`;
+      const adv = arr(d.advertencias).filter((x): x is string => typeof x === "string");
+      return `${str(d.clasificacion)}; en revisión: ${rev.length > 0 ? rev.join(", ") : "ninguno"}${adv.length ? `; advertencias: ${adv.join(" | ")}` : ""}`;
     }
     case "registrar":
       return `${str(d.accion)} ${d.id_contrato ?? "-"}${d.ruta_archivo ? ` → ${str(d.ruta_archivo)}` : ""}`.slice(0, 200);
@@ -162,7 +163,7 @@ function frasesAceptadas(r: Pick<Revision, "campos" | "reviewId" | "mensaje_id">
 function decisionHumana(r: Revision, message: string): DecisionHumana | null {
   if (hash(r.operacion, r.campos, r.sourceFingerprint) !== r.operationHash) return null;
   // Normaliza solo forma (mayúsculas, espacios, punto/exclamación final); cualquier palabra extra sigue sin autorizar.
-  const texto = message.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!]+$/u, "").trim().replace(/^(?:s[ií]|ok|vale|listo),? /u, "");
+  const texto = message.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!]+$/u, "").trim().replace(/^(?:sí,?|si,|ok,?|vale,?|listo,?) /u, "");
   const aprobaciones = [
     `confirmo revisión ${r.reviewId}`,
     `confirmo ${r.mensaje_id} (revisión ${r.reviewId})`,

@@ -71,3 +71,9 @@ test("RN5.3: variantes naturales de la frase del PRD aprueban; condicionales, ot
     assert.equal(r.toolCalls.length, 0, frase);
   }
 });
+
+test("HU-3.3: la advertencia por remitente desconocido llega al reply", async (t) => {
+  const e = entorno(t, [paso({ id: "v6", name: "contratos_validar", args: { mensaje_id: "msg-006" } })]);
+  const r = await e.run("valida msg-006");
+  assert.match(r.reply, /Remitente no registrado como comercial \(jperez@periferia-ficticia\.com\)/);
+});
