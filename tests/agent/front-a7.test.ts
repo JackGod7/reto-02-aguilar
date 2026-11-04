@@ -43,7 +43,7 @@ type Cuerpo = { message: string; sessionId: string; requestId: string };
 const SESION = "11111111-2222-4333-8444-555555555555";
 const REVIEW = "ed040f41-4c9b-437e-91bb-c89fd1e8e69f";
 
-function chat(chatResp: Respuesta[], inicial: Record<string, string> = {}, extra: Record<string, Respuesta[]> = {}) {
+function chat(chatResp: Respuesta[], inicial: Record<string, string> = {}, extra: Record<string, Respuesta[]> = {}, sinAlmacenamiento = false) {
   const nodos = new Map<string, Elemento>();
   const guardado = new Map<string, string>(Object.entries(inicial));
   const llamadas: Llamada[] = [];
@@ -58,10 +58,13 @@ function chat(chatResp: Respuesta[], inicial: Record<string, string> = {}, extra
       ? { sessionId: eco.sessionId, requestId: eco.requestId, ...r.data } : r.data;
     return { status: r.status, ok: r.status < 400, json: async () => data };
   };
+  const bloqueado = (): never => { throw new Error("SecurityError: almacenamiento bloqueado"); };
   runInNewContext(script, {
     crypto: webcrypto,
     document: { getElementById: nodo, createElement: (tag: string) => new Elemento(tag), createTextNode: (s: string) => new Elemento("#text", s) },
-    localStorage: { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => guardado.set(k, v), removeItem: (k: string) => guardado.delete(k) },
+    localStorage: sinAlmacenamiento
+      ? { getItem: bloqueado, setItem: bloqueado, removeItem: bloqueado }
+      : { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => guardado.set(k, v), removeItem: (k: string) => guardado.delete(k) },
     fetch: async (path: string, opts: { method?: string; body?: string } = {}) => {
       llamadas.push({ path, method: opts.method ?? "GET", body: opts.body ?? "", storage: Object.fromEntries(guardado) });
       if (path === "/api/sessions") return responder(extra[path]?.shift() ?? { status: 201, data: { sessionId: SESION } });
@@ -298,4 +301,48 @@ test("(f) tabla del mensaje y panel de revisión renderizan datos como texto", a
 
 test("(f) el script del chat no usa APIs que interpreten HTML", () => {
   assert.ok(!/\.innerHTML\b|\.outerHTML\b|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment/.test(script));
+});
+
+test("sin localStorage envía igual y el reintento reusa sessionId y requestId en memoria", async () => {
+  const c = chat(["red", { status: 200, data: { reply: "Registrado", toolCalls: [] } }, { status: 200, data: { reply: "Segundo", toolCalls: [] } }], {}, {}, true);
+  await c.enviar("Procesa el buzón");
+  assert.equal(c.chats().length, 1);
+  assert.equal(c.errores().length, 1);
+  assert.equal(c.nodo("log").textContent.split("no permite guardar datos locales").length - 1, 1);
+  await c.click(c.boton("Recuperar petición")[0]);
+  const [a, b] = c.chats();
+  assert.deepEqual(b, a);
+  assert.match(c.nodo("log").textContent, /Registrado/);
+  await c.enviar("Otro mensaje");
+  const tercero = c.chats()[2];
+  assert.equal(tercero.sessionId, a.sessionId);
+  assert.notEqual(tercero.requestId, a.requestId);
+  assert.equal(c.llamadas.filter((l) => l.path === "/api/sessions").length, 1);
+  assert.equal(c.nodo("log").textContent.split("no permite guardar datos locales").length - 1, 1);
+});
+
+test("reply multilínea con tabla de cierre, pregunta y resumen se renderiza como texto", async () => {
+  const reply = [
+    "Procesé 6 correos.",
+    "",
+    "| Contrato | Estado |",
+    "|---|---|",
+    "| CT-2026-015 | <b>vigente</b> |",
+    "| CM-2026-03 | póliza pendiente |",
+    "",
+    "¿Quieres que revise lo que vence hoy?",
+    "Resumen de herramientas:",
+    "- contratos_registrar: ok",
+  ].join("\n");
+  const c = chat([{ status: 200, data: { reply, toolCalls: [] } }]);
+  await c.enviar("Procesa");
+  const els = c.elementos();
+  const celdas = els.filter((n) => n.tag === "td").map((n) => n.textContent);
+  assert.deepEqual(celdas, ["CT-2026-015", "<b>vigente</b>", "CM-2026-03", "póliza pendiente"]);
+  assert.ok(!els.some((n) => n.tag === "b"));
+  const parrafos = els.filter((n) => n.tag === "p").map((n) => n.textContent);
+  assert.ok(parrafos.includes("Procesé 6 correos."));
+  assert.ok(parrafos.includes("¿Quieres que revise lo que vence hoy?Resumen de herramientas:"));
+  assert.ok(els.some((n) => n.tag === "br"));
+  assert.deepEqual(els.filter((n) => n.tag === "li").map((n) => n.textContent), ["contratos_registrar: ok"]);
 });
