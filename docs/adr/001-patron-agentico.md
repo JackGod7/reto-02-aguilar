@@ -1,6 +1,6 @@
 # ADR-001 — Patrón agéntico: ReAct acotado + gate HITL en código
 
-**Estado:** referencia histórica de la versión AI SDK. El motor vigente se define en [ADR-004](004-langgraph-orquestacion.md). Las mediciones de esta nota no son mediciones de LangGraph.
+**Estado:** el patrón (ReAct acotado + gate HITL en código) sigue vigente. El motor y la confirmación se sustituyen en [ADR-004](004-langgraph-orquestacion.md): LangGraph con interrupt/Command, y la decisión humana se valida con gramática completa contra el snapshot de la revisión en vez de detectar «confirmo» en el texto. El texto siguiente describe la primera entrega (AI SDK).
 
 ## Contexto
 Hay que registrar contratos desde correos. La siguiente acción depende de lo observado (¿hay campos con confianza < 0.8? ¿remitente no registrado? ¿duplicado?), y un valor mal registrado en el maestro es costoso. Restricción: ventana de 2 h, sin shell para el modelo.
@@ -27,4 +27,4 @@ Labs DevTalles usados: 01 (tool use, tope de pasos), 03 (juez programático), 04
 - (+) Medido en una sola corrida real, sin desglose entrada/salida: 53.358 tokens por lote de 6 correos (Haiku 5.5, 2026-11-03).
 - (−) La confirmación se detecta por texto ("confirmo", "sí"): es una heurística, no un evento explícito.
 - (−) Un agente único: si crecen los tipos de documento, habrá que revisar este ADR.
-- **Siguiente paso:** migrar el gate al `toolApproval` nativo del SDK. La regla ya es código; el cambio sería de integración. No está hecho.
+- **Resuelto en ADR-004:** la pausa es un interrupt de LangGraph y la aprobación es un evento explícito (`confirmo revisión <reviewId>`).
