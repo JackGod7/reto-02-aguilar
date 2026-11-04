@@ -168,32 +168,105 @@ export const registrar: ToolDef<
   },
 };
 
-function registrarSync(
-  args: unknown,
-  ctx: ToolContext,
-): { respuesta: string; resumen: string; ok: boolean; mid?: string } {
+type Resultado = { respuesta: string; resumen: string; ok: boolean; mid?: string };
+type Contrato = NonNullable<Extraccion["contrato"]>;
+
+const rechazo = (error: string, resumen: string, extra: Record<string, unknown> = {}): Resultado => ({
+  respuesta: fail(error, extra), resumen, ok: false,
+});
+
+/**
+ * Anti-bypass del gate HITL: el override solo es válido con confirmación y solo sobre campos
+ * que el servidor (no el modelo) marca en revisión para ese mensaje.
+ */
+function validarOverride(p: z.infer<typeof registrar.args>, ctx: ToolContext): Resultado | null {
+  if (!p.contrato || Object.keys(p.contrato).length === 0) return null;
+  if (p.confirmado !== true) {
+    return rechazo("override `contrato` rechazado: requiere confirmado:true tras confirmación de la persona", "override sin confirmar");
+  }
+  const permitidos = new Set(analizar(ctx.directory, p.mensaje_id).val.requiere_revision);
+  const fuera = Object.keys(p.contrato).filter((k) => !permitidos.has(k));
+  if (fuera.length === 0) return null;
+  return rechazo(
+    `override rechazado: campos fuera de revisión (${fuera.join(", ")}); permitidos: ${[...permitidos].join(", ") || "ninguno"}`,
+    `override fuera de revisión: ${fuera.join(", ")}`,
+  );
+}
+
+function resultadoRevision(a: Analisis, c: Contrato): Resultado {
+  const campos = a.val.requiere_revision;
+  const revision = campos.map((campo) => ({
+    campo,
+    valor_propuesto: (c as Record<string, unknown>)[campo] ?? null,
+    confianza: c.confianza[campo] ?? 0,
+    motivo: a.ext.motivos[campo] ?? "Requiere revisión",
+  }));
+  return rechazo(`requiere revisión: ${campos.join(", ")}`, `requiere revisión: ${campos.join(", ")}`, { revision });
+}
+
+const datosCompletos = (c: Contrato): boolean =>
+  /^[A-Z]{2}-\d{4}-\d{1,3}$/.test(c.id_contrato) && Boolean(c.cliente) && esFechaIso(c.fecha_inicio) && esFechaIso(c.fecha_fin);
+
+/** Archiva el adjunto de una actualización; un otrosí conserva su propio archivo numerado. Devuelve la ruta del maestro. */
+function archivarActualizacion(ctx: ToolContext, a: Analisis, previa: FilaMaestro, origen: string | null): string {
+  if (!origen) return previa.ruta_sharepoint;
+  const ext = extDe(a.adjunto ?? "");
+  const carpeta = previa.ruta_sharepoint.includes("/")
+    ? dirname(previa.ruta_sharepoint)
+    : `Contratos/${previa.fecha_inicio.slice(0, 4)}/${slugCliente(previa.cliente)}`;
+  if (a.ext.tipo !== "otrosi") {
+    archivarAdjunto(ctx.directory, origen, carpeta, previa.id_contrato, ext);
+    return previa.ruta_sharepoint;
+  }
+  const { sharepoint } = dirs(ctx.directory);
+  let n = 1;
+  while (existsSync(`${sharepoint}/${carpeta}/${previa.id_contrato}-otrosi-${n}${ext}`)) n++;
+  archivarAdjunto(ctx.directory, origen, carpeta, `${previa.id_contrato}-otrosi-${n}`, ext);
+  return previa.ruta_sharepoint || `${carpeta}/${previa.id_contrato}-otrosi-${n}${ext}`;
+}
+
+function registrarActualizacion(ctx: ToolContext, a: Analisis, c: Contrato, idx: number, mensajeId: string, origen: string | null): string {
+  const previa = a.maestro[idx] as FilaMaestro;
+  const ruta = archivarActualizacion(ctx, a, previa, origen);
+  a.maestro[idx] = {
+    ...previa,
+    cliente: c.cliente || previa.cliente,
+    nit_cliente: c.nit_cliente, pais: c.pais, objeto: a.ext.tipo === "otrosi" ? previa.objeto : c.objeto,
+    valor: String(c.valor), moneda: c.moneda, fecha_inicio: c.fecha_inicio, fecha_fin: c.fecha_fin,
+    requiere_poliza: String(c.requiere_poliza), tipo_poliza: c.tipo_poliza, estado_poliza: c.estado_poliza,
+    comercial: c.comercial || previa.comercial, ruta_sharepoint: ruta,
+  };
+  agregarHistorial(ctx.directory, { id_contrato: c.id_contrato, accion: "actualizacion", cambios: a.val.diferencias ?? {}, mensaje_id: mensajeId });
+  return ruta;
+}
+
+/** Devuelve la ruta archivada, o null si el id ya existe en el maestro con otro NIT/objeto (revisión manual). */
+function registrarNuevo(ctx: ToolContext, a: Analisis, c: Contrato, mensajeId: string, hoy: string, origen: string | null): string | null {
+  if (a.maestro.some((f) => f.id_contrato === c.id_contrato)) return null;
+  const carpeta = `Contratos/${c.fecha_inicio.slice(0, 4)}/${slugCliente(c.cliente)}`;
+  const ruta = origen
+    ? archivarAdjunto(ctx.directory, origen, carpeta, c.id_contrato, extDe(a.adjunto ?? ""))
+    : `${carpeta}/${c.id_contrato}`;
+  a.maestro.push({
+    id_contrato: c.id_contrato, cliente: c.cliente, nit_cliente: c.nit_cliente, pais: c.pais, objeto: c.objeto,
+    valor: String(c.valor), moneda: c.moneda, fecha_inicio: c.fecha_inicio, fecha_fin: c.fecha_fin,
+    requiere_poliza: String(c.requiere_poliza), tipo_poliza: c.tipo_poliza, estado_poliza: c.estado_poliza,
+    comercial: c.comercial, ruta_sharepoint: ruta, fecha_registro: hoy, fuente: "buzon",
+  });
+  agregarHistorial(ctx.directory, { id_contrato: c.id_contrato, accion: "nuevo", cambios: {}, mensaje_id: mensajeId });
+  return ruta;
+}
+
+function registrarSync(args: unknown, ctx: ToolContext): Resultado {
   const p = registrar.args.parse(args);
   const hoy = p.hoy ?? process.env.HOY ?? HOY_DEFECTO;
-  if (!esFechaIso(hoy)) return { respuesta: fail("hoy inválido"), resumen: "hoy inválido", ok: false };
-  if (p.contrato && Object.keys(p.contrato).length > 0) {
-    // Anti-bypass del gate HITL: el override solo es válido con confirmación y solo sobre campos
-    // que el servidor (no el modelo) marca en revisión para ese mensaje.
-    if (p.confirmado !== true) {
-      return { respuesta: fail("override `contrato` rechazado: requiere confirmado:true tras confirmación de la persona"), resumen: "override sin confirmar", ok: false };
-    }
-    const base = analizar(ctx.directory, p.mensaje_id);
-    const permitidos = new Set(base.val.requiere_revision);
-    const fuera = Object.keys(p.contrato).filter((k) => !permitidos.has(k));
-    if (fuera.length > 0) {
-      return {
-        respuesta: fail(`override rechazado: campos fuera de revisión (${fuera.join(", ")}); permitidos: ${[...permitidos].join(", ") || "ninguno"}`),
-        resumen: `override fuera de revisión: ${fuera.join(", ")}`, ok: false,
-      };
-    }
-  }
-  const { ext, val, maestro, adjunto } = analizar(ctx.directory, p.mensaje_id, p.contrato);
-  const c = ext.contrato;
+  if (!esFechaIso(hoy)) return rechazo("hoy inválido", "hoy inválido");
+  const veto = validarOverride(p, ctx);
+  if (veto) return veto;
 
+  const a = analizar(ctx.directory, p.mensaje_id, p.contrato);
+  const { ext, val, maestro } = a;
+  const c = ext.contrato;
   if (val.clasificacion === "rechazado" || !c) {
     marcarProcesado(ctx.directory, p.mensaje_id);
     return {
@@ -208,74 +281,20 @@ function registrarSync(
       resumen: `duplicado ${c.id_contrato}, sin escritura`, ok: true,
     };
   }
-  if (val.requiere_revision.length > 0 && p.confirmado !== true) {
-    const revision = val.requiere_revision.map((campo) => ({
-      campo,
-      valor_propuesto: (c as Record<string, unknown>)[campo] ?? null,
-      confianza: c.confianza[campo] ?? 0,
-      motivo: ext.motivos[campo] ?? "Requiere revisión",
-    }));
-    return {
-      respuesta: fail(`requiere revisión: ${val.requiere_revision.join(", ")}`, { revision }),
-      resumen: `requiere revisión: ${val.requiere_revision.join(", ")}`, ok: false,
-    };
-  }
-  // Validación mínima antes de escribir
-  if (!/^[A-Z]{2}-\d{4}-\d{1,3}$/.test(c.id_contrato) || !c.cliente || !esFechaIso(c.fecha_inicio) || !esFechaIso(c.fecha_fin)) {
-    return { respuesta: fail("datos incompletos: id_contrato, cliente y fechas son obligatorios"), resumen: "datos incompletos", ok: false };
-  }
-  const origen = adjunto ? rutaAdjunto(ctx.directory, p.mensaje_id, adjunto) : null;
-  const { sharepoint } = dirs(ctx.directory);
-  const idx = val.id_contrato_existente ? maestro.findIndex((f) => f.id_contrato === val.id_contrato_existente) : -1;
-  let ruta = "";
-  let accion: string;
+  if (val.requiere_revision.length > 0 && p.confirmado !== true) return resultadoRevision(a, c);
+  if (!datosCompletos(c)) return rechazo("datos incompletos: id_contrato, cliente y fechas son obligatorios", "datos incompletos");
 
-  if (val.clasificacion === "actualizacion" && idx >= 0) {
-    const previa = maestro[idx] as FilaMaestro;
-    ruta = previa.ruta_sharepoint;
-    if (origen) {
-      const carpeta = ruta.includes("/") ? dirname(ruta) : `Contratos/${previa.fecha_inicio.slice(0, 4)}/${slugCliente(previa.cliente)}`;
-      if (ext.tipo === "otrosi") {
-        let n = 1;
-        while (existsSync(`${sharepoint}/${carpeta}/${previa.id_contrato}-otrosi-${n}${extDe(adjunto ?? "")}`)) n++;
-        archivarAdjunto(ctx.directory, origen, carpeta, `${previa.id_contrato}-otrosi-${n}`, extDe(adjunto ?? ""));
-        ruta = previa.ruta_sharepoint || `${carpeta}/${previa.id_contrato}-otrosi-${n}${extDe(adjunto ?? "")}`;
-      } else {
-        archivarAdjunto(ctx.directory, origen, carpeta, previa.id_contrato, extDe(adjunto ?? ""));
-      }
-    }
-    maestro[idx] = {
-      ...previa,
-      cliente: c.cliente || previa.cliente,
-      nit_cliente: c.nit_cliente, pais: c.pais, objeto: ext.tipo === "otrosi" ? previa.objeto : c.objeto,
-      valor: String(c.valor), moneda: c.moneda, fecha_inicio: c.fecha_inicio, fecha_fin: c.fecha_fin,
-      requiere_poliza: String(c.requiere_poliza), tipo_poliza: c.tipo_poliza, estado_poliza: c.estado_poliza,
-      comercial: c.comercial || previa.comercial, ruta_sharepoint: ruta,
-    };
-    accion = "actualizacion";
-    agregarHistorial(ctx.directory, {
-      id_contrato: c.id_contrato, accion, cambios: val.diferencias ?? {}, mensaje_id: p.mensaje_id,
-    });
-  } else {
-    if (maestro.some((f) => f.id_contrato === c.id_contrato)) {
-      return { respuesta: fail(`ya existe ${c.id_contrato} con otro NIT/objeto; revisión manual`), resumen: "conflicto de id", ok: false };
-    }
-    const carpeta = `Contratos/${c.fecha_inicio.slice(0, 4)}/${slugCliente(c.cliente)}`;
-    const relativa = origen
-      ? archivarAdjunto(ctx.directory, origen, carpeta, c.id_contrato, extDe(adjunto ?? ""))
-      : `${carpeta}/${c.id_contrato}`;
-    ruta = relativa;
-    maestro.push({
-      id_contrato: c.id_contrato, cliente: c.cliente, nit_cliente: c.nit_cliente, pais: c.pais, objeto: c.objeto,
-      valor: String(c.valor), moneda: c.moneda, fecha_inicio: c.fecha_inicio, fecha_fin: c.fecha_fin,
-      requiere_poliza: String(c.requiere_poliza), tipo_poliza: c.tipo_poliza, estado_poliza: c.estado_poliza,
-      comercial: c.comercial, ruta_sharepoint: ruta, fecha_registro: hoy, fuente: "buzon",
-    });
-    accion = "nuevo";
-    agregarHistorial(ctx.directory, { id_contrato: c.id_contrato, accion, cambios: {}, mensaje_id: p.mensaje_id });
-  }
+  const origen = a.adjunto ? rutaAdjunto(ctx.directory, p.mensaje_id, a.adjunto) : null;
+  const idx = val.id_contrato_existente ? maestro.findIndex((f) => f.id_contrato === val.id_contrato_existente) : -1;
+  const esActualizacion = val.clasificacion === "actualizacion" && idx >= 0;
+  const ruta = esActualizacion
+    ? registrarActualizacion(ctx, a, c, idx, p.mensaje_id, origen)
+    : registrarNuevo(ctx, a, c, p.mensaje_id, hoy, origen);
+  if (ruta === null) return rechazo(`ya existe ${c.id_contrato} con otro NIT/objeto; revisión manual`, "conflicto de id");
+
   escribirMaestro(ctx.directory, maestro);
   marcarProcesado(ctx.directory, p.mensaje_id);
+  const accion = esActualizacion ? "actualizacion" : "nuevo";
   return {
     respuesta: ok({ id_contrato: c.id_contrato, accion, ruta_archivo: `out/sharepoint/${ruta}` }),
     resumen: `${accion} ${c.id_contrato}`, ok: true,

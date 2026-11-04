@@ -75,3 +75,13 @@ test("tope diario de tokens", async () => {
     assert.equal(((await r.json()) as { error: { code: string } }).error.code, "daily_token_limit");
   });
 });
+
+test("el tope diario se comprueba antes de crear sesión: un 429 no deja sesiones huérfanas", async () => {
+  // Con maxSesiones=1, una sesión huérfana del primer 429 convertiría el segundo en 503.
+  await con({ maxDailyTokens: 0, maxSesiones: 1 }, async (base) => {
+    for (let i = 0; i < 2; i++) {
+      const r = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "hola" }) });
+      assert.equal(r.status, 429);
+    }
+  });
+});

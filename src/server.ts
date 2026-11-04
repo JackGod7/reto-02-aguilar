@@ -183,6 +183,8 @@ export function crearServidor(o: ServerOpts): Server {
       }
       if (typeof body.message !== "string" || body.message.trim() === "") return err(res, 400, "bad_request", "Falta 'message'");
       if (body.message.length > MAX_MENSAJE) return err(res, 400, "message_too_long", `El mensaje excede ${MAX_MENSAJE} caracteres`);
+      // Tope global antes de tocar sesiones: un 429 no debe dejar sesiones huérfanas.
+      if (tokensHoy() >= maxDiario) return err(res, 429, "daily_token_limit", "Se alcanzó el tope diario de tokens del servicio");
       let session;
       if (body.sessionId !== undefined && body.sessionId !== null) {
         session = typeof body.sessionId === "string" ? obtenerSesion(body.sessionId) : undefined;
@@ -195,7 +197,6 @@ export function crearServidor(o: ServerOpts): Server {
         session = crearSesion();
         vivas.set(session.id, now);
       }
-      if (tokensHoy() >= maxDiario) return err(res, 429, "daily_token_limit", "Se alcanzó el tope diario de tokens del servicio");
       if (session.tokens >= maxTokens) return err(res, 429, "token_limit", "La sesión alcanzó su tope de tokens; inicia una nueva");
       if (ocupadas.has(session.id)) return err(res, 409, "busy", "La sesión está procesando otra petición");
       ocupadas.add(session.id);

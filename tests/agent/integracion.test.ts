@@ -5,6 +5,7 @@ import { cpSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { crearServidor } from "../../src/server.ts";
+import type { RespuestaChat } from "./tipos.ts";
 import type { Herramienta, LLMAdapter, Mensaje } from "../../src/llm/adapter.ts";
 
 // Integración M2↔M3: servidor + registry + tools REALES (solo el modelo está guionado).
@@ -35,14 +36,14 @@ test("servidor con tools reales: para en 006 y registra tras confirmar", async (
   const srv = crearServidor({ adapter, prompt: "p", webDir: "web", directory: dir });
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
-  const post = (b: unknown) => fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json() as Promise<any>);
+  const post = (b: unknown) => fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json() as Promise<RespuestaChat>);
   try {
     const r1 = await post({ message: "procesa" });
     assert.equal(r1.needsConfirmation?.mensaje_id, "msg-006");
-    assert.deepEqual(r1.needsConfirmation.campos.map((c: any) => c.campo), ["valor", "fecha_fin"]);
+    assert.deepEqual(r1.needsConfirmation!.campos.map((c) => c.campo), ["valor", "fecha_fin"]);
     const r2 = await post({ sessionId: r1.sessionId, message: "confirmo el valor 0 y la fecha fin 2027-08-31" });
     assert.equal(r2.needsConfirmation, null);
-    assert.ok(r2.toolCalls.some((c: any) => c.name === "contratos_registrar" && c.ok));
+    assert.ok(r2.toolCalls.some((c) => c.name === "contratos_registrar" && c.ok));
     const md = readFileSync(join(dir, "out", "alertas.md"), "utf8");
     assert.match(md, /CM-2026-03/);
     assert.match(readFileSync(join(dir, "out", "sharepoint", "maestro-contratos.csv"), "utf8"), /CM-2026-03/);

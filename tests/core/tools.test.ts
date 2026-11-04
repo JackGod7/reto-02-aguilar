@@ -181,7 +181,7 @@ test("seguridad: toda ruta escrita queda dentro de out/ y fixtures intactos", ()
   assert.equal(hashDir(join(REAL, "fixtures")), hashRealAntes);
 });
 
-test("maestro con celda de fórmula se relee igual tras registrar override", async () => {
+test("el CSV neutraliza celdas con prefijo de fórmula al escribir y las restituye al releer", async () => {
   const d2 = mkdtempSync(join(tmpdir(), "reto02b-"));
   cpSync(join(REAL, "fixtures"), join(d2, "fixtures"), { recursive: true });
   const c2 = { directory: d2, sessionId: "t2" };

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { crearServidor } from "../../src/server.ts";
+import type { RespuestaChat, RespuestaError, RespuestaSesion } from "./tipos.ts";
 import type { Herramienta, LLMAdapter, Mensaje } from "../../src/llm/adapter.ts";
 
 const CLAVE = "sk-ant-SECRETO-123";
@@ -65,16 +66,16 @@ const lote = adapter(async (h, ultimo) => {
 test("el lote se detiene en 006 con needsConfirmation y luego se confirma", async () => {
   registrados.length = 0;
   await conServidor(lote, async (base) => {
-    const r1 = (await (await post(base, { message: "procesa el buzón" })).json()) as any;
+    const r1 = (await (await post(base, { message: "procesa el buzón" })).json()) as RespuestaChat;
     assert.deepEqual(registrados, ["msg-001", "msg-002"]);
-    assert.equal(r1.needsConfirmation.mensaje_id, "msg-006");
-    assert.deepEqual(r1.needsConfirmation.campos.map((c: any) => c.campo), ["valor", "fecha_fin"]);
+    assert.equal(r1.needsConfirmation?.mensaje_id, "msg-006");
+    assert.deepEqual(r1.needsConfirmation!.campos.map((c) => c.campo), ["valor", "fecha_fin"]);
     assert.equal(r1.toolCalls.length, 3);
     assert.equal(r1.toolCalls[2].ok, false);
     assert.match(r1.sessionId, /^[0-9a-f-]{36}$/);
-    const s = (await (await fetch(`${base}/api/sessions/${r1.sessionId}`)).json()) as any;
-    assert.equal(s.pending.mensaje_id, "msg-006");
-    const r2 = (await (await post(base, { sessionId: r1.sessionId, message: "confirmo el registro" })).json()) as any;
+    const s = (await (await fetch(`${base}/api/sessions/${r1.sessionId}`)).json()) as RespuestaSesion;
+    assert.equal(s.pending?.mensaje_id, "msg-006");
+    const r2 = (await (await post(base, { sessionId: r1.sessionId, message: "confirmo el registro" })).json()) as RespuestaChat;
     assert.equal(r2.needsConfirmation, null);
     assert.ok(registrados.includes("msg-006"));
   });
@@ -87,7 +88,7 @@ test("confirmado:true sin revisión pendiente es rechazado", async () => {
     return r.ok ? "registrado" : "rechazado";
   });
   await conServidor(ad, async (base) => {
-    const r = (await (await post(base, { message: "confirmo todo" })).json()) as any;
+    const r = (await (await post(base, { message: "confirmo todo" })).json()) as RespuestaChat;
     assert.equal(r.reply, "rechazado");
     assert.equal(r.toolCalls[0].ok, false);
     assert.deepEqual(registrados, []);
@@ -105,8 +106,8 @@ test("confirmado:true con pendiente pero sin confirmación del usuario es rechaz
     return "pendiente";
   });
   await conServidor(ad, async (base) => {
-    const r1 = (await (await post(base, { message: "procesa 006" })).json()) as any;
-    const r2 = (await (await post(base, { sessionId: r1.sessionId, message: "dame más info" })).json()) as any;
+    const r1 = (await (await post(base, { message: "procesa 006" })).json()) as RespuestaChat;
+    const r2 = (await (await post(base, { sessionId: r1.sessionId, message: "dame más info" })).json()) as RespuestaChat;
     assert.equal(r2.reply, "rechazado");
     assert.deepEqual(registrados, []);
   });
@@ -116,7 +117,7 @@ test("mensaje >2000 → 400; sessionId inventado → 404; vacío → 400", async
   await conServidor(lote, async (base) => {
     const a = await post(base, { message: "x".repeat(2001) });
     assert.equal(a.status, 400);
-    assert.equal(((await a.json()) as any).error.code, "message_too_long");
+    assert.equal(((await a.json()) as RespuestaError).error.code, "message_too_long");
     assert.equal((await post(base, { sessionId: "inventado", message: "hola" })).status, 404);
     assert.equal((await fetch(`${base}/api/sessions/inventado`)).status, 404);
     assert.equal((await post(base, { message: "" })).status, 400);
@@ -125,7 +126,7 @@ test("mensaje >2000 → 400; sessionId inventado → 404; vacío → 400", async
 
 test("health no depende del LLM; ACCESS_KEY y rate limit", async () => {
   await conServidor(lote, async (base) => {
-    const h = (await (await fetch(`${base}/api/health`)).json()) as any;
+    const h: unknown = await (await fetch(`${base}/api/health`)).json();
     assert.deepEqual(h, { ok: true, provider: "mock", model: "mock-1" });
     assert.equal((await post(base, { message: "hola" })).status, 401);
     assert.equal((await post(base, { message: "hola" }, { "x-access-key": "k" })).status, 200);
@@ -156,7 +157,7 @@ test("la clave no aparece en ninguna respuesta (ni en error del proveedor)", asy
 
 test("tope de tokens por sesión", async () => {
   await conServidor(lote, async (base) => {
-    const r1 = (await (await post(base, { message: "hola" })).json()) as any;
+    const r1 = (await (await post(base, { message: "hola" })).json()) as RespuestaChat;
     const r2 = await post(base, { sessionId: r1.sessionId, message: "otra" });
     assert.equal(r2.status, 429);
   }, { maxSessionTokens: 100 });
