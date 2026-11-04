@@ -6,6 +6,7 @@ import { Annotation, Command, END, START, StateGraph, interrupt } from "@langcha
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { z } from "zod";
 import type { LLMAdapter, LlamadaLLM, MensajePaso, PasoLLM } from "../llm/adapter.ts";
+import { log } from "../infra/log.ts";
 import { escribirLog } from "../infra/registros.ts";
 import { herramientas, ejecutarTool } from "./registry.ts";
 import { checkpointer } from "./session.ts";
@@ -254,6 +255,7 @@ async function ejecutar(t: Turno, f: Flujo, pedido: Pedido, autorizado = false):
     }
   }
   const respuesta = parse(salida);
+  log(respuesta.ok ? "info" : "warn", "tool", { sessionId: o.session.id, herramienta: pedido.name, ok: respuesta.ok });
   const call: ToolCallInfo = { id: pedido.id, name: pedido.name, args: structuredClone(pedido.args), ok: respuesta.ok, resumen: resumir(pedido.name, respuesta, pedido.args) };
   return { last: { pedido, respuesta }, toolCalls: [...f.toolCalls, call], history: [...f.history, { role: "tool", content: salida, toolCallId: pedido.id }] };
 }
@@ -355,6 +357,7 @@ function nodoDetectarRevision(s: Flujo, config: LangGraphRunnableConfig): Cambio
 function nodoPausa(s: Flujo, config: LangGraphRunnableConfig): Cambio {
   // Este nodo se reejecuta al reanudar: interrupt es su primera operación, sin efectos previos.
   const respuesta = interrupt<Revision | null, DecisionHumana>(s.review);
+  log("info", "reanuda", { sessionId: turnoDe(config).o.session.id, aprobado: respuesta.approved });
   return guardar(turnoDe(config), { respuestaHumana: respuesta, history: [...s.history, { role: "user", content: respuesta.message }] });
 }
 

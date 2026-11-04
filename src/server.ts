@@ -11,6 +11,7 @@ import type { ejecutarTool } from "./agent/registry.ts";
 import { ejecutarTurnoGrafo, ErrorTurnoGrafo } from "./agent/graph.ts";
 import { buildSystemPrompt } from "./agent/context.ts";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { log } from "./infra/log.ts";
 import type { RunResult } from "./agent/graph.ts";
 
 const MAX_MENSAJE = 2000;
@@ -165,6 +166,10 @@ export function crearServidor(o: ServerOpts): Server {
   async function manejar(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
     const path = url.pathname;
+    if (path.startsWith("/api/") && path !== "/api/health") {
+      const inicio = Date.now();
+      res.on("finish", () => log("info", "http", { metodo: req.method, ruta: path.replace(/^(\/api\/sessions\/)[^/]+$/, "$1:id"), status: res.statusCode, ms: Date.now() - inicio }));
+    }
     if (req.method === "GET" && path === "/api/health") {
       return enviar(res, 200, { ok: true, provider: o.adapter.provider, model: o.adapter.model, buildSha, persistence: "process", tracing: false });
     }
@@ -304,5 +309,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     maxSessionTokens: Number(process.env.MAX_SESSION_TOKENS) || 200_000,
     maxDailyTokens: Number(process.env.MAX_DAILY_TOKENS) || 2_000_000,
   });
-  srv.listen(port, () => console.log(`Servidor en :${port}`));
+  srv.listen(port, () => log("info", "servidor_listo", { puerto: port }));
 }
