@@ -8,7 +8,8 @@
     "demo": "node demo.ts",
     "dev": "node --env-file-if-exists=.env src/server.ts",
     "typecheck": "tsc --noEmit",
-    "build:modulo": "node scripts/build-modulo.ts"
+    "build:modulo": "node scripts/build-modulo.ts",
+    "evals": "node scripts/evals.ts"
   },
   "dependencies": {
     "@langchain/anthropic": "1.6.0",
