@@ -4,9 +4,9 @@ Agente conversacional que lee el buzón de contratos, extrae los datos, valida c
 
 ## Link de prueba
 
-- Chat: `<URL_PUBLICA>`
-- Salud del servicio: `<URL_PUBLICA>/api/health`
-- Clave de acceso: si el servidor tiene `ACCESS_KEY` configurada, la pantalla la pide. Valor: `<ACCESS_KEY>`
+- Chat: `https://reto-02-aguilar.onrender.com`
+- Salud del servicio: `https://reto-02-aguilar.onrender.com/api/health`
+- Clave de acceso: si el servidor tiene `ACCESS_KEY` configurada, la pantalla la pide. Valor: se entrega por el hilo de correo.
 
 ## Requisitos
 
