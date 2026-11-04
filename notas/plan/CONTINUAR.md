@@ -1,12 +1,12 @@
 # CONTINUAR — estado real 2026-11-04
 
-Reto 02 Periferia IT: agente de chat "Registro de Contratos Vigentes". Entregado (tag `entrega-2026-11-03`, versión Vercel AI SDK). Hoy `main` = **62eb282** (migración a LangGraph + LangChain), igual en GitHub y en Render.
+Reto 02 Periferia IT: agente de chat "Registro de Contratos Vigentes". Entregado (tag `entrega-2026-11-03`, versión Vercel AI SDK). Hoy `main` = **1d38be7** (migración a LangGraph + LangChain), igual en GitHub y en Render.
 
 ## Estado verificado
-- Render: https://reto-02-aguilar.onrender.com · `/api/health` → `buildSha` 62eb282, modelo `claude-sonnet-5-5`, `tracing:false`.
+- Render: https://reto-02-aguilar.onrender.com · `/api/health` → `buildSha` 1d38be7, modelo `claude-sonnet-5-5`, `tracing:false`.
 - Servicio `srv-dbla0hqjnfac73fblb6g` (repo JackGod7/reto-02-aguilar, rama main, autoDeploy por commit; no hagas trigger_deploy tras push).
 - Demo del PRD probada en real: pausa en msg-006, una confirmación, alertas generadas. Reset hecho (`{"ok":true}`).
-- Puertas OK: tsc limpio · 165/165 tests · `verificar-entrega.ts` exit 0 · knip 0 hallazgos · escaneo de secretos limpio.
+- Puertas OK: tsc limpio · 176/176 tests · `verificar-entrega.ts` exit 0 · knip 0 hallazgos · escaneo de secretos limpio.
 
 ## Checkouts
 - **Trabajo:** `/Users/jackaguilar/reto-periferia-ia-integracion` (rama `codex/langgraph-reto`, = main). Usar este.
@@ -34,7 +34,7 @@ git diff | grep -iE 'sk-ant|ANTHROPIC_API_KEY=|ACCESS_KEY=|/Users/'   # secretos
 Coordinador que solo orquesta (verificar/escanear/editar en sesiones aparte); LangGraph: compilado una vez, thread_id=sessionId, nodos con nombre; pruebas Gherkin por criterio PRD; evals con modelo real sin maquillar; red team por patrón. Además: sesiones o agentes por unidad en archivos disjuntos; revisión adversarial antes de integrar; borrar antes de escribir; sin sobreingeniería. Commits atómicos `tipo(alcance): verbo`, sin atribución. Nunca escribas ANTHROPIC_API_KEY.
 
 ## Pendientes (prioridad)
-1. Observabilidad: helper de log JSON a stdout con id de correlación por turno (petición → nodo → tool) · `src/infra/log.ts` nuevo; engancharlo en `src/server.ts` y `src/agent/graph.ts`.
+1. HECHO (3ed602f): `src/infra/log.ts` log JSON a stdout. Prueba real prod 1d38be7 OK (pausa 006, 1 confirmación, alertas). H6/H7 documentados como abiertos. Trazabilidad en SOLUCION.md hecha. Falta: evals reales post-arreglos (Haiku) y revisar logs JSON en Render.
 2. Revisar logs de Render 10 min tras el próximo deploy (MCP render `list_logs`).
 3. Sección "Trazabilidad código → PRD" en `SOLUCION.md`, desde `entrega/DEFENSA-RELEASE.md` (checkout viejo) y la tabla del backend.
 4. Preparar la defensa con `entrega/DEFENSA-RELEASE.md`.
