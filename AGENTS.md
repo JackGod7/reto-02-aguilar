@@ -11,6 +11,20 @@ Las instrucciones del proyecto están en `CLAUDE.md` (válidas para cualquier ag
 5. **Puertas antes de cada commit**: `npx tsc --noEmit` limpio, `node --test 'tests/**/*.test.ts'` en verde, `node demo.ts` dos veces idéntico (borrando `out/`), fixtures sin cambios, sin claves en el diff.
 6. **Commits atómicos y TBD**: un commit por cambio lógico, mensaje convencional, sin atribución a asistentes; push a `main` (Render despliega) y comprobar `/api/health`.
 7. **Sin sobreingeniería**: si un pendiente no mejora lo que el evaluador ve o un criterio del PRD, se documenta como roadmap en vez de construirse.
+8. **Coordinador que solo orquesta**: verificaciones, escaneos y ediciones van a sesiones o agentes aparte, en archivos disjuntos.
+9. **"El mejor código es el que no se escribe"**: borrar antes de escribir; cada archivo y dependencia responde a un requisito del PRD.
+10. **Patrones de LangGraph**: grafo compilado una sola vez, `thread_id` = sessionId, nodos y routers con nombre.
+11. **Pruebas atómicas por criterio del PRD** (épica → HU → criterio), escritas como escenarios Gherkin en español, sin Cucumber.
+12. **Evals con el modelo real** y graders deterministas; los fallos se reportan, no se maquillan.
+13. **Red team**: al menos un caso adversarial por patrón de seguridad.
+
+## Puertas antes de push
+
+`npx tsc --noEmit` · `node --test 'tests/**/*.test.ts'` · `node scripts/verificar-entrega.ts` · knip con entradas de producción (`src/server.ts`, `demo.ts`, `scripts/*.ts`) y 0 hallazgos (`npx -y knip@latest`) · escaneo de secretos y de rutas `/Users/` en el diff. Commits sin atribución.
+
+## Evals
+
+TODO: documentar `npm run evals`, `--only HU-x`, `--model`, `evals/MATRIZ.md` y `evals/redteam-jailbreak.md` cuando se integren las ramas `evals-reales` y `redteam` (aún no integradas).
 
 ## Continuidad entre clientes
 
