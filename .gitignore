@@ -5,3 +5,10 @@ plan/fuentes/*.zip
 plan/fuentes/
 plan/CONTINUAR.md
 plan/PROGRESO.md
+# Notas internas de proceso (se conservan en disco, fuera del repo)
+plan/historico/
+plan/PLAN-ATOMICO.md
+plan/MVP.md
+plan/INICIO-AGENTES.md
+docs/historico/
+docs/CURSO-APLICACION.md

@@ -14,4 +14,4 @@ Las instrucciones del proyecto están en `CLAUDE.md` (válidas para cualquier ag
 
 ## Continuidad entre clientes
 
-Leer [plan/INICIO-AGENTES.md](plan/INICIO-AGENTES.md). Estado y decisiones viven en archivos y Git; los nombres de agentes anteriores no son handles portables entre herramientas.
+Estado y decisiones viven en archivos y Git; los nombres de agentes anteriores no son handles portables entre herramientas.
