@@ -478,9 +478,13 @@ textarea{flex:1;font:inherit;padding:10px;border-radius:8px;border:1px solid var
       }
       body = pending || { message: text, sessionId: state.sessionId, requestId: crypto.randomUUID() };
       saveRequest(body);
-      // Confirmar persistencia local antes de iniciar un efecto remoto recuperable.
-      if (localStorage.getItem('contratos.request') !== JSON.stringify(body) || loadSession() !== state.sessionId) {
-        throw { code: 'storage', message: 'No pude guardar la sesión y la petición; habilita almacenamiento local para continuar.' };
+      // Sin almacenamiento local la sesión y el requestId viven en memoria de la pestaña:
+      // el reintento sigue siendo idempotente; solo se pierde la recuperación tras recargar.
+      let persistido = false;
+      try { persistido = localStorage.getItem('contratos.request') === JSON.stringify(body) && loadSession() === state.sessionId; } catch { /* sin almacenamiento */ }
+      if (!persistido && !state.avisoMemoria) {
+        state.avisoMemoria = true;
+        addNotice('El navegador no permite guardar datos locales: si recargas la página no podré recuperar una petición pendiente.');
       }
       const data = await api('/api/chat', { method: 'POST', body: JSON.stringify(body) });
       if (data.sessionId !== body.sessionId || data.requestId !== body.requestId || typeof data.reply !== 'string' || !Array.isArray(data.toolCalls)) throw { code: 'network' };
