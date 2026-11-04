@@ -1,6 +1,6 @@
-// Evals con el modelo REAL contra un servidor local (nunca producción).
-// Uso:
-//   node scripts/evals.ts [--model haiku|sonnet] [--runs 3] [--max-tokens-total 1500000] [--only HU-4,RN5] [--json salida.json] [--env-file .env]
+// Evals con el modelo REAL contra un servidor local (nunca producción). Defaults: --model haiku --runs 1 --max-tokens-total 300000.
+// Antes de llamar al proveedor imprime la estimación de tokens/costo y aborta si supera el tope; el tope se impone como tope diario del servidor.
+// --model sonnet o --runs > 1 exigen --yes. --dry-run solo estima (no carga la clave ni llama a la API). Filtros: --only HU-4,RN5. --json salida.json.
 //   node scripts/evals.ts --matriz resultados-haiku.json [resultados-sonnet.json]   (imprime evals/MATRIZ.md)
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
@@ -24,8 +24,10 @@ interface Informe { modelo: string; runs: number; tokens: { entrada: number; sal
 
 const { values: o, positionals } = parseArgs({ allowPositionals: true, options: {
   model: { type: "string", default: "haiku" },
-  runs: { type: "string", default: "3" },
-  "max-tokens-total": { type: "string", default: "1500000" },
+  runs: { type: "string", default: "1" },
+  "max-tokens-total": { type: "string", default: "300000" },
+  yes: { type: "boolean", default: false },
+  "dry-run": { type: "boolean", default: false },
   only: { type: "string" },
   json: { type: "string" },
   matriz: { type: "boolean", default: false },
@@ -44,6 +46,27 @@ if (!modelo || !Number.isSafeInteger(runs) || runs < 1 || !Number.isSafeInteger(
   console.error("Uso: node scripts/evals.ts --model haiku|sonnet --runs N --max-tokens-total N [--only HU-4,RN5]");
   process.exit(2);
 }
+// ---------- plan y estimación (sin red) ----------
+const TOKENS_POR_TURNO = 20_000; // promedio observado con Haiku (5k–55k por escenario)
+const filtro = o.only?.split(",").map((s) => s.trim()).filter(Boolean);
+const coincide = (c: Criterio) => !filtro || filtro.some((f) => c.id === f || c.id.startsWith(`${f}.`) || c.caracteristica === f);
+const elegidos = criterios.filter(coincide);
+const ejecuciones = [...new Set(elegidos.map((c) => c.ejecucion))];
+const turnosEstimados = ejecuciones.reduce((n, e) => n + (e.http ? 1 : e.turnos?.length ?? 0), 0) * runs;
+const estimado = turnosEstimados * TOKENS_POR_TURNO;
+const costoEstimado = (estimado * 0.95 * modelo.entrada + estimado * 0.05 * modelo.salida) / 1_000_000;
+console.log(`Plan: ${modelo.id} · runs=${runs} · ${elegidos.length} criterios en ${ejecuciones.length} ejecuciones · ~${turnosEstimados} turnos`);
+console.log(`Estimación: ~${estimado} tokens · ~US$ ${costoEstimado.toFixed(4)} (precio de lista) · tope ${tope} tokens`);
+if ((o.model === "sonnet" || runs > 1) && !o.yes && !o["dry-run"]) {
+  console.error("--model sonnet o --runs > 1 requieren --yes (gasto real).");
+  process.exit(2);
+}
+if (estimado > tope && !o["dry-run"]) {
+  console.error(`La estimación supera el tope de ${tope} tokens: reduce con --only/--runs o sube --max-tokens-total.`);
+  process.exit(2);
+}
+if (o["dry-run"]) process.exit(0);
+
 if (!process.env.ANTHROPIC_API_KEY) {
   try { process.loadEnvFile(resolve(o["env-file"] ?? ".env")); } catch { /* se reporta abajo */ }
 }
@@ -107,7 +130,11 @@ async function ejecutar(e: Ejecucion): Promise<{ ctx: Contexto; dir: string; tok
   const dir = mkdtempSync(join(tmpdir(), "reto-evals-"));
   cpSync(join(raiz, "fixtures"), join(dir, "fixtures"), { recursive: true });
   const maxSessionTokens = e.servidor?.maxSessionTokens ?? 200_000;
-  const srv = crearServidor({ adapter, directory: dir, rateLimit: e.servidor?.rateLimit ?? 10_000, maxSessionTokens, maxDailyTokens: e.servidor?.maxDailyTokens, accessKey: e.servidor?.accessKey, webDir: join(raiz, "web") });
+  // Tope duro: el saldo restante va como tope diario del servidor, que no llama al modelo si la llamada no cabe.
+  const restante = tope - consumidos();
+  if (restante < 1) throw new TopeAlcanzado(`tope de ${tope} tokens alcanzado`);
+  const maxDailyTokens = Math.min(e.servidor?.maxDailyTokens ?? restante, restante);
+  const srv = crearServidor({ adapter, directory: dir, rateLimit: e.servidor?.rateLimit ?? 10_000, maxSessionTokens, maxDailyTokens, accessKey: e.servidor?.accessKey, webDir: join(raiz, "web") });
   await new Promise<void>((ok) => srv.listen(0, "127.0.0.1", ok));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
   const antes = consumidos(); const inicio = Date.now();
@@ -148,10 +175,6 @@ async function nuevaSesion(base: string): Promise<string | null> {
 }
 
 // ---------- ejecución ----------
-const filtro = o.only?.split(",").map((s) => s.trim()).filter(Boolean);
-const coincide = (c: Criterio) => !filtro || filtro.some((f) => c.id === f || c.id.startsWith(`${f}.`) || c.caracteristica === f);
-const elegidos = criterios.filter(coincide);
-const ejecuciones = [...new Set(elegidos.map((c) => c.ejecucion))];
 const filas = new Map<string, Fila>(elegidos.map((c) => [c.id, { id: c.id, caracteristica: c.caracteristica, prd: c.prd, gherkin: c.gherkin, critico: c.critico, codigo: c.codigo, tests: c.tests, pasa: 0, runs: 0, fallos: [], evidencia: [] }]));
 const medidas = new Map<string, { tokens: number; ms: number; n: number }>();
 let topeAlcanzado = false;
